@@ -1,0 +1,12 @@
+id,name,age,city,status,region
+1,Alice,34,Austin,active,us
+2,Bob,29,Denver,active,us
+3,Charlie,,Denver,inactive,us
+4,Diana,41,Miami,active,us
+5,Ethan,,Austin,active,us
+6,Fiona,52,Seattle,inactive,us
+7,George,23,Miami,active,us
+8,Hannah,,Denver,active,us
+9,Ian,37,Austin,inactive,us
+10,Julia,45,Seattle,active,us
+10,Julia,45,Seattle,active,us
