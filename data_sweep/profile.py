@@ -1,6 +1,7 @@
 import pandas as pd
 
 from data_sweep.findings import Finding
+from data_sweep.ordinal import match_ordinal_scale
 
 
 def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: int = 15) -> list[Finding]:
@@ -62,7 +63,16 @@ def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: in
                 ))
 
         if not pd.api.types.is_numeric_dtype(df[col]):
-            if unique_count <= max_categories:
+            scale = match_ordinal_scale(df[col].dropna())
+            if scale:
+                findings.append(Finding(
+                    column=col,
+                    issue_type="categorical_encoding",
+                    confidence=0.95,
+                    detail=f"Column '{col}' values follow a natural order ({' < '.join(scale)}).",
+                    action_taken=f"Ordinal encoded using order: {' < '.join(scale)}.",
+                ))
+            elif unique_count <= max_categories:
                 findings.append(Finding(
                     column=col,
                     issue_type="categorical_encoding",
@@ -74,9 +84,9 @@ def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: in
                 findings.append(Finding(
                     column=col,
                     issue_type="categorical_encoding",
-                    confidence=0.4,
+                    confidence=0.8,
                     detail=f"Column '{col}' has {unique_count} unique values, above the {max_categories} threshold for safe one-hot encoding.",
-                    action_taken="Flagged only — no automatic fix applied.",
+                    action_taken="Dropped column (too many categories to encode usefully).",
                 ))
 
     return findings
