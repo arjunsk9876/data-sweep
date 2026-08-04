@@ -1,5 +1,6 @@
 import argparse
 import sys
+from pathlib import Path
 
 import pandas as pd
 
@@ -32,12 +33,16 @@ def main():
     cleaned_df = clean(df, args.missing_threshold)
     report_text = report(findings, df.shape, cleaned_df.shape)
 
-    cleaned_df.to_csv("cleaned_output.csv", index=False)
-    with open("report_output.md", "w") as f:
+    stem = Path(args.input_csv).stem
+    cleaned_path = f"cleaned_{stem}.csv"
+    report_path = f"report_{stem}.md"
+
+    cleaned_df.to_csv(cleaned_path, index=False)
+    with open(report_path, "w") as f:
         f.write(report_text)
 
     print(f"Scanned {args.input_csv}: {len(findings)} issue(s) found.")
-    print("Wrote cleaned_output.csv and report_output.md.")
+    print(f"Wrote {cleaned_path} and {report_path}.")
 
 
 if __name__ == "__main__":
