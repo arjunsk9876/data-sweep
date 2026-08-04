@@ -3,7 +3,7 @@ import pandas as pd
 from data_sweep.findings import Finding
 
 
-def profile(df: pd.DataFrame, missing_threshold: float = 0.5) -> list[Finding]:
+def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: int = 15) -> list[Finding]:
     findings = []
 
     dup_count = int(df.duplicated().sum())
@@ -35,31 +35,48 @@ def profile(df: pd.DataFrame, missing_threshold: float = 0.5) -> list[Finding]:
             continue
 
         missing_count = int(df[col].isna().sum())
-        if missing_count == 0:
-            continue
-
-        missing_pct = missing_count / len(df)
-        if missing_pct > missing_threshold:
-            findings.append(Finding(
-                column=col,
-                issue_type="missing_values",
-                confidence=1.0,
-                detail=f"Column '{col}' is missing {missing_pct:.0%} of its values, above the {missing_threshold:.0%} threshold.",
-                action_taken="Dropped column (too much missing data to impute reliably).",
-            ))
-        else:
-            if pd.api.types.is_numeric_dtype(df[col]):
-                fill_value = non_null.median()
-                strategy = "median"
+        if missing_count > 0:
+            missing_pct = missing_count / len(df)
+            if missing_pct > missing_threshold:
+                findings.append(Finding(
+                    column=col,
+                    issue_type="missing_values",
+                    confidence=1.0,
+                    detail=f"Column '{col}' is missing {missing_pct:.0%} of its values, above the {missing_threshold:.0%} threshold.",
+                    action_taken="Dropped column (too much missing data to impute reliably).",
+                ))
+                continue
             else:
-                fill_value = non_null.mode().iloc[0]
-                strategy = "mode"
-            findings.append(Finding(
-                column=col,
-                issue_type="missing_values",
-                confidence=1.0,
-                detail=f"Column '{col}' is missing {missing_count} value(s) ({missing_pct:.0%}).",
-                action_taken=f"Filled missing values with the column's {strategy} ({fill_value}).",
-            ))
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    fill_value = non_null.median()
+                    strategy = "median"
+                else:
+                    fill_value = non_null.mode().iloc[0]
+                    strategy = "mode"
+                findings.append(Finding(
+                    column=col,
+                    issue_type="missing_values",
+                    confidence=1.0,
+                    detail=f"Column '{col}' is missing {missing_count} value(s) ({missing_pct:.0%}).",
+                    action_taken=f"Filled missing values with the column's {strategy} ({fill_value}).",
+                ))
+
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            if unique_count <= max_categories:
+                findings.append(Finding(
+                    column=col,
+                    issue_type="categorical_encoding",
+                    confidence=0.9,
+                    detail=f"Column '{col}' is a text column with {unique_count} unique value(s), which most models can't use directly.",
+                    action_taken=f"One-hot encoded into {unique_count} column(s).",
+                ))
+            else:
+                findings.append(Finding(
+                    column=col,
+                    issue_type="categorical_encoding",
+                    confidence=0.4,
+                    detail=f"Column '{col}' has {unique_count} unique values, above the {max_categories} threshold for safe one-hot encoding.",
+                    action_taken="Flagged only — no automatic fix applied.",
+                ))
 
     return findings

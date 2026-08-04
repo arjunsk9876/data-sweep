@@ -4,6 +4,7 @@ ISSUE_TYPE_LABELS = {
     "duplicate_rows": "Duplicate Rows",
     "missing_values": "Missing Values",
     "constant_column": "Constant Column",
+    "categorical_encoding": "Categorical Encoding",
 }
 
 
