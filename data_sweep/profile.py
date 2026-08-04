@@ -4,7 +4,7 @@ from data_sweep.findings import Finding
 from data_sweep.ordinal import match_ordinal_scale
 
 
-def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: int = 15) -> list[Finding]:
+def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: int = 15, max_unique_ratio: float = 0.5) -> list[Finding]:
     findings = []
 
     dup_count = int(df.duplicated().sum())
@@ -62,6 +62,21 @@ def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: in
                     action_taken=f"Filled missing values with the column's {strategy} ({fill_value}).",
                 ))
 
+        if pd.api.types.is_numeric_dtype(df[col]):
+            q1, q3 = non_null.quantile([0.25, 0.75])
+            iqr = q3 - q1
+            if iqr > 0:
+                lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+                outlier_count = int(((non_null < lower) | (non_null > upper)).sum())
+                if outlier_count > 0:
+                    findings.append(Finding(
+                        column=col,
+                        issue_type="outliers",
+                        confidence=0.7,
+                        detail=f"Column '{col}' has {outlier_count} value(s) outside the IQR bounds [{lower:.2f}, {upper:.2f}].",
+                        action_taken=f"Capped values to [{lower:.2f}, {upper:.2f}].",
+                    ))
+
         if not pd.api.types.is_numeric_dtype(df[col]):
             scale = match_ordinal_scale(df[col].dropna())
             if scale:
@@ -71,6 +86,14 @@ def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: in
                     confidence=0.95,
                     detail=f"Column '{col}' values follow a natural order ({' < '.join(scale)}).",
                     action_taken=f"Ordinal encoded using order: {' < '.join(scale)}.",
+                ))
+            elif unique_count / len(df) > max_unique_ratio:
+                findings.append(Finding(
+                    column=col,
+                    issue_type="categorical_encoding",
+                    confidence=0.85,
+                    detail=f"Column '{col}' has {unique_count} unique value(s) across {len(df)} row(s) ({unique_count / len(df):.0%} unique), which looks like an identifier or free text rather than a category.",
+                    action_taken="Dropped column (values are effectively unique per row, not encodable as categories).",
                 ))
             elif unique_count <= max_categories:
                 findings.append(Finding(

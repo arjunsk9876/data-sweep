@@ -21,6 +21,15 @@ def main():
         default=0.5,
         help="Drop a column if the fraction of missing values exceeds this (default: 0.5).",
     )
+    parser.add_argument(
+        "--columns",
+        help="Comma-separated list of columns to keep (skips the interactive prompt).",
+    )
+    parser.add_argument(
+        "--all-columns",
+        action="store_true",
+        help="Keep all columns without prompting.",
+    )
     args = parser.parse_args()
 
     try:
@@ -28,6 +37,24 @@ def main():
     except FileNotFoundError:
         print(f"Error: file not found: {args.input_csv}", file=sys.stderr)
         sys.exit(1)
+
+    if args.columns:
+        keep = [c.strip() for c in args.columns.split(",")]
+    elif args.all_columns:
+        keep = list(df.columns)
+    elif sys.stdin.isatty():
+        print(f"Columns found: {', '.join(df.columns)}")
+        selection = input("Which columns are you actually testing with? (comma-separated, blank = all): ").strip()
+        keep = [c.strip() for c in selection.split(",")] if selection else list(df.columns)
+    else:
+        keep = list(df.columns)
+
+    unknown = [c for c in keep if c not in df.columns]
+    if unknown:
+        print(f"Error: unknown column(s): {', '.join(unknown)}", file=sys.stderr)
+        sys.exit(1)
+
+    df = df[keep]
 
     findings = profile(df, args.missing_threshold)
     cleaned_df = clean(df, args.missing_threshold)
