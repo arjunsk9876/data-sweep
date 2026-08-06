@@ -1,16 +1,16 @@
 # data-sweep report
 
 ## Summary
-- Rows: 11 -> 10
-- Columns: 5 -> 8
-- Issues found: 5
+- Rows: 11 -> 11
+- Columns: 7 -> 12
+- Issues found: 6
 
 ## Findings
 
-### 1. (all) — Duplicate Rows
-- **Confidence:** 100%
-- **Detail:** Found 1 duplicate row(s) that are exact copies of other rows.
-- **Action taken:** Removed 1 duplicate row(s), keeping the first occurrence.
+### 1. name — Categorical Encoding
+- **Confidence:** 85%
+- **Detail:** Column 'name' has 10 unique value(s) across 11 row(s) (91% unique), which looks like an identifier or free text rather than a category.
+- **Action taken:** Dropped column (values are effectively unique per row, not encodable as categories).
 
 ### 2. age — Missing Values
 - **Confidence:** 100%
@@ -31,3 +31,8 @@
 - **Confidence:** 100%
 - **Detail:** Column 'region' has only one unique value ('us') across all rows, so it carries no information.
 - **Action taken:** Dropped column.
+
+### 6.  color — Categorical Encoding
+- **Confidence:** 90%
+- **Detail:** Column ' color' is a text column with 4 unique value(s), which most models can't use directly.
+- **Action taken:** One-hot encoded into 4 column(s).

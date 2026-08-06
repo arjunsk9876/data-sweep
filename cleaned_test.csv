@@ -1,11 +1,12 @@
-id,age,city_Austin,city_Denver,city_Miami,city_Seattle,status_active,status_inactive
-1,34.0,True,False,False,False,True,False
-2,29.0,False,True,False,False,True,False
-3,37.0,False,True,False,False,False,True
-4,41.0,False,False,True,False,True,False
-5,37.0,True,False,False,False,True,False
-6,47.875,False,False,False,True,False,True
-7,26.875,False,False,True,False,True,False
-8,37.0,False,True,False,False,True,False
-9,37.0,True,False,False,False,False,True
-10,45.0,False,False,False,True,True,False
+id,age,city_Austin,city_Denver,city_Miami,city_Seattle,status_active,status_inactive, color_ blue, color_ green, color_ red, color_ yellow
+1,34.0,True,False,False,False,True,False,False,False,True,False
+2,29.0,False,True,False,False,True,False,True,False,False,False
+3,39.0,False,True,False,False,False,True,False,True,False,False
+4,41.0,False,False,True,False,True,False,False,False,False,True
+5,39.0,True,False,False,False,True,False,False,False,True,False
+6,52.0,False,False,False,True,False,True,False,True,False,False
+7,24.25,False,False,True,False,True,False,True,False,False,False
+8,39.0,False,True,False,False,True,False,False,False,True,False
+9,37.0,True,False,False,False,False,True,False,False,False,True
+10,45.0,False,False,False,True,True,False,False,True,False,False
+10,45.0,False,False,False,True,True,False,True,False,False,False

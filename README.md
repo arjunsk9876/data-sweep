@@ -46,9 +46,13 @@ python3 run.py yourfile.csv --target label                 # flag columns leakin
 | Categorical — ordinal | Text values matching a known ordered scale (e.g. low/medium/high) | Ordinal-encode to preserve order |
 | Categorical — one-hot | Low-cardinality text column | One-hot encode |
 | Categorical — identifier | Text column that's mostly unique per row (e.g. names) | Drop (not a real category) |
-| Categorical — high-cardinality | Too many unique values to one-hot safely | Drop |
+| Categorical — high-cardinality | Too many unique values to one-hot safely (even after bucketing) | Drop |
+| Categorical — bucketed | Too many uniques for direct one-hot, but not hopeless | Keep the most frequent values, merge the rest into `other`, then one-hot |
 | Outliers | Values outside 1.5×IQR from Q1/Q3 | Cap to the IQR bounds |
+| Mixed-type column | Object column that's mostly numeric but has stray non-numeric placeholders (e.g. `unknown`) | Coerce strays to missing, convert column to numeric, then fill like any other missing value |
 | Data leakage | Numeric column >95% correlated with `--target` | Flag only (no auto-fix — you decide whether to drop it) |
+| Multicollinearity | Two numeric columns >95% correlated with each other | Flag only (consider dropping one) |
+| Class imbalance | `--target` has a majority class over 90% of rows | Flag only (consider resampling, class weights, or a non-accuracy metric) |
 
 ## Sample report
 
