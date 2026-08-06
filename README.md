@@ -2,15 +2,29 @@
 
 A CLI tool that scans a CSV, fixes common data quality issues, and writes a plain-English report explaining exactly what it changed and why.
 
+## Setup
+
+Requires Python 3.9+ and pandas.
+
+```bash
+git clone <this-repo-url>
+cd data-sweep
+pip install pandas
+```
+
 ## Usage
+
+The CSV you want to clean does **not** need to live inside this repo — pass any path, relative or absolute:
 
 ```bash
 python3 run.py yourfile.csv
+python3 run.py /path/to/yourfile.csv
+python3 /path/to/data-sweep/run.py yourfile.csv
 ```
 
 You'll be prompted to pick which columns you're actually testing with (so id/name-style junk columns never get touched). Hit enter to keep all columns.
 
-Output: `cleaned_yourfile.csv` (the fixed data) and `report_yourfile.md` (what happened).
+Output: `cleaned_yourfile.csv` (the fixed data) and `report_yourfile.md` (what happened) — both written to your **current working directory**, not the input file's directory. `cd` into the folder you want the output in before running, if that matters to you.
 
 **Flags:**
 
@@ -70,10 +84,4 @@ python3 run.py yourfile.csv --missing-threshold 0.3        # drop a column if >3
 - **Confidence:** 100%
 - **Detail:** Column 'region' has only one unique value ('us') across all rows, so it carries no information.
 - **Action taken:** Dropped column.
-```
-
-## Requirements
-
-```bash
-pip install pandas
 ```
