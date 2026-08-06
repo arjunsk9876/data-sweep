@@ -1,10 +1,12 @@
+from typing import Optional
+
 import pandas as pd
 
 from data_sweep.findings import Finding
 from data_sweep.ordinal import match_ordinal_scale
 
 
-def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: int = 15, max_unique_ratio: float = 0.5) -> list[Finding]:
+def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: int = 15, max_unique_ratio: float = 0.5, target: Optional[str] = None, leakage_threshold: float = 0.95) -> list[Finding]:
     findings = []
 
     dup_count = int(df.duplicated().sum())
@@ -16,6 +18,20 @@ def profile(df: pd.DataFrame, missing_threshold: float = 0.5, max_categories: in
             detail=f"Found {dup_count} duplicate row(s) that are exact copies of other rows.",
             action_taken=f"Removed {dup_count} duplicate row(s), keeping the first occurrence.",
         ))
+
+    if target and target in df.columns and pd.api.types.is_numeric_dtype(df[target]):
+        for col in df.columns:
+            if col == target or not pd.api.types.is_numeric_dtype(df[col]):
+                continue
+            corr = df[col].corr(df[target])
+            if pd.notna(corr) and abs(corr) > leakage_threshold:
+                findings.append(Finding(
+                    column=col,
+                    issue_type="data_leakage",
+                    confidence=round(abs(corr), 2),
+                    detail=f"Column '{col}' is {abs(corr):.0%} correlated with target '{target}' — too close to be a real predictor, likely leaks the label.",
+                    action_taken="Flagged only (not auto-dropped — review before training on this column).",
+                ))
 
     for col in df.columns:
         non_null = df[col].dropna()

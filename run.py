@@ -30,6 +30,10 @@ def main():
         action="store_true",
         help="Keep all columns without prompting.",
     )
+    parser.add_argument(
+        "--target",
+        help="Name of the target/label column. Flags other columns suspiciously correlated with it (data leakage).",
+    )
     args = parser.parse_args()
 
     try:
@@ -54,9 +58,16 @@ def main():
         print(f"Error: unknown column(s): {', '.join(unknown)}", file=sys.stderr)
         sys.exit(1)
 
+    if args.target and args.target not in df.columns:
+        print(f"Error: unknown target column: {args.target}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.target and args.target not in keep:
+        keep.append(args.target)
+
     df = df[keep]
 
-    findings = profile(df, args.missing_threshold)
+    findings = profile(df, args.missing_threshold, target=args.target)
     cleaned_df = clean(df, args.missing_threshold)
     report_text = report(findings, df.shape, cleaned_df.shape)
 

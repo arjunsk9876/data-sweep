@@ -32,6 +32,7 @@ Output: `cleaned_yourfile.csv` (the fixed data) and `report_yourfile.md` (what h
 python3 run.py yourfile.csv --columns "age,city,status"   # skip the prompt, pick columns explicitly
 python3 run.py yourfile.csv --all-columns                 # skip the prompt, keep everything
 python3 run.py yourfile.csv --missing-threshold 0.3        # drop a column if >30% missing (default 50%)
+python3 run.py yourfile.csv --target label                 # flag columns leaking the target column
 ```
 
 ## What it detects and fixes
@@ -47,6 +48,7 @@ python3 run.py yourfile.csv --missing-threshold 0.3        # drop a column if >3
 | Categorical — identifier | Text column that's mostly unique per row (e.g. names) | Drop (not a real category) |
 | Categorical — high-cardinality | Too many unique values to one-hot safely | Drop |
 | Outliers | Values outside 1.5×IQR from Q1/Q3 | Cap to the IQR bounds |
+| Data leakage | Numeric column >95% correlated with `--target` | Flag only (no auto-fix — you decide whether to drop it) |
 
 ## Sample report
 
