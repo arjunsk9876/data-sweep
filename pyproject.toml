@@ -11,6 +11,11 @@ dependencies = [
     "pandas>=1.3.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
 [project.scripts]
 data-sweep = "run:main"
 
