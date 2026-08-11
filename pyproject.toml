@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data-sweep"
+version = "0.1.0"
+description = "Scan a CSV, fix common data quality issues, and explain what changed."
+requires-python = ">=3.9"
+dependencies = [
+    "pandas>=1.3.0",
+]
+
+[project.scripts]
+data-sweep = "run:main"
+
+[tool.setuptools]
+packages = ["data_sweep"]
+py-modules = ["run"]
