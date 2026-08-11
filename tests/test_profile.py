@@ -71,3 +71,27 @@ def test_missing_over_threshold_reports_column_drop():
     findings = [f for f in profile(df, missing_threshold=0.5) if f.issue_type == "missing_values"]
     assert len(findings) == 1
     assert findings[0].action_taken == "Dropped column (too much missing data to impute reliably)."
+
+
+def test_outliers_detected_on_both_sides_of_iqr():
+    df = pd.DataFrame({
+        "anchor": range(11),
+        "a": [50, 52, 49, 51, 53, 48, 52, 50, 51, 500, -100],
+    })
+    findings = [f for f in profile(df) if f.issue_type == "outliers"]
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.column == "a"
+    assert f.confidence == 0.7
+    assert "2 value(s)" in f.detail
+    assert "[45.75, 55.75]" in f.detail
+    assert "Capped values to [45.75, 55.75]" in f.action_taken
+
+
+def test_no_outliers_when_values_are_tight():
+    df = pd.DataFrame({
+        "anchor": range(10),
+        "a": [50, 52, 49, 51, 53, 48, 52, 50, 51, 54],
+    })
+    findings = [f for f in profile(df) if f.issue_type == "outliers"]
+    assert findings == []

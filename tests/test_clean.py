@@ -62,3 +62,21 @@ def test_missing_over_threshold_column_dropped():
     df = pd.DataFrame({"anchor": [1, 2, 3, 4, 5], "a": [1.0, 2.0, None, None, None]})
     result = clean(df, missing_threshold=0.5)
     assert "a" not in result.columns
+
+
+def test_outliers_capped_to_iqr_bounds():
+    df = pd.DataFrame({
+        "anchor": range(11),
+        "a": [50, 52, 49, 51, 53, 48, 52, 50, 51, 500, -100],
+    })
+    result = clean(df)
+    assert result["a"].tolist() == [50.0, 52.0, 49.0, 51.0, 53.0, 48.0, 52.0, 50.0, 51.0, 55.75, 45.75]
+
+
+def test_no_capping_when_values_are_tight():
+    df = pd.DataFrame({
+        "anchor": range(10),
+        "a": [50, 52, 49, 51, 53, 48, 52, 50, 51, 54],
+    })
+    result = clean(df)
+    assert result["a"].tolist() == [50, 52, 49, 51, 53, 48, 52, 50, 51, 54]
