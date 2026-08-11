@@ -1,0 +1,8 @@
+cleaned_*.csv
+report_*.md
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+venv/
+.venv/
