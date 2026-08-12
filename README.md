@@ -4,7 +4,19 @@ A CLI tool that scans a CSV, fixes common data quality issues, and writes a plai
 
 ## Setup
 
-Requires Python 3.9+ and pandas.
+Requires Python 3.9+.
+
+**Recommended — install as a command:**
+
+```bash
+git clone <this-repo-url>
+cd data-sweep
+pip install -e .
+```
+
+This gives you a `data-sweep` command on your PATH (see Usage below).
+
+**No packaging, just the script** — if you'd rather not install anything beyond the one dependency:
 
 ```bash
 git clone <this-repo-url>
@@ -12,15 +24,18 @@ cd data-sweep
 pip install pandas
 ```
 
+Then run it directly with `python3 run.py yourfile.csv` instead of `data-sweep yourfile.csv` — every example below works either way, just swap the command.
+
 ## Usage
 
 The CSV you want to clean does **not** need to live inside this repo — pass any path, relative or absolute:
 
 ```bash
-python3 run.py yourfile.csv
-python3 run.py /path/to/yourfile.csv
-python3 /path/to/data-sweep/run.py yourfile.csv
+data-sweep yourfile.csv
+data-sweep /path/to/yourfile.csv
 ```
+
+(Using the script directly instead: `python3 run.py yourfile.csv`, or `python3 /path/to/data-sweep/run.py yourfile.csv` from elsewhere.)
 
 You'll be prompted to pick which columns you're actually testing with (so id/name-style junk columns never get touched). Hit enter to keep all columns.
 
@@ -29,10 +44,11 @@ Output: `cleaned_yourfile.csv` (the fixed data) and `report_yourfile.md` (what h
 **Flags:**
 
 ```bash
-python3 run.py yourfile.csv --columns "age,city,status"   # skip the prompt, pick columns explicitly
-python3 run.py yourfile.csv --all-columns                 # skip the prompt, keep everything
-python3 run.py yourfile.csv --missing-threshold 0.3        # drop a column if >30% missing (default 50%)
-python3 run.py yourfile.csv --target label                 # flag columns leaking the target column
+data-sweep yourfile.csv --columns "age,city,status"   # skip the prompt, pick columns explicitly
+data-sweep yourfile.csv --all-columns                 # skip the prompt, keep everything
+data-sweep yourfile.csv --missing-threshold 0.3        # drop a column if >30% missing (default 50%)
+data-sweep yourfile.csv --target label                 # flag columns leaking the target column, plus class imbalance
+data-sweep yourfile.csv --dry-run                       # preview the report only, don't write a cleaned CSV
 ```
 
 ## What it detects and fixes
@@ -136,3 +152,35 @@ Run with `--target label` on a messier dataset (mixed-type column, two redundant
 - **Detail:** Column 'label' is a text column with 2 unique value(s), which most models can't use directly.
 - **Action taken:** One-hot encoded into 2 column(s).
 ```
+
+With `--dry-run`, you get `report_yourfile.md` only — no `cleaned_yourfile.csv` is written, and the terminal says so explicitly.
+
+## Development
+
+Detection logic lives in `data_sweep/detectors/` — one module per concern (duplicates, constant, missing, outliers, mixed-type, categorical, leakage, imbalance, multicollinearity). `data_sweep/profile.py` is a thin orchestrator that calls each detector and reports what it finds; `data_sweep/clean.py` calls the same detector decision logic to actually apply the fix, so the two never drift apart.
+
+Install with dev dependencies (pytest, mypy):
+
+```bash
+pip install -e ".[dev]"
+```
+
+Run the test suite:
+
+```bash
+python -m pytest
+```
+
+Run type checks:
+
+```bash
+mypy data_sweep run.py
+```
+
+`tests/fixtures/sample.csv` is a small, deterministic dataset that exercises every detector branch (duplicate row, constant column, all-null column, missing under/over threshold, IQR outliers, ordinal/one-hot/bucketed/identifier/dropped categorical tiers, mixed-type column, multicollinear pair, leaky feature, imbalanced target) — useful both as a test fixture and as a quick manual smoke test:
+
+```bash
+data-sweep tests/fixtures/sample.csv --all-columns --target target
+```
+
+CI (`.github/workflows/ci.yml`) runs both pytest and mypy on every push and pull request.
