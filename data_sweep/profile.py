@@ -2,11 +2,13 @@ from typing import Optional
 
 import pandas as pd
 
+from data_sweep.detectors.categorical import find_categorical_encoding
 from data_sweep.detectors.constant import find_constant_column
 from data_sweep.detectors.duplicates import find_duplicate_rows
+from data_sweep.detectors.mixed_type import coerce_mixed_type_column
 from data_sweep.detectors.missing import find_missing_values
+from data_sweep.detectors.outliers import find_outliers
 from data_sweep.findings import Finding
-from data_sweep.ordinal import match_ordinal_scale
 
 
 def profile(
@@ -71,22 +73,9 @@ def profile(
     for col in df.columns:
         series = df[col]
 
-        if not pd.api.types.is_numeric_dtype(series):
-            non_null_raw = series.dropna()
-            if len(non_null_raw) > 0:
-                coerced_raw = pd.to_numeric(non_null_raw, errors="coerce")
-                parsed_ratio = coerced_raw.notna().mean()
-                if mixed_type_threshold <= parsed_ratio < 1.0:
-                    stray_values = sorted(set(non_null_raw[coerced_raw.isna()].astype(str)))
-                    shown = ", ".join(stray_values[:5]) + ("..." if len(stray_values) > 5 else "")
-                    findings.append(Finding(
-                        column=col,
-                        issue_type="mixed_type_column",
-                        confidence=round(parsed_ratio, 2),
-                        detail=f"Column '{col}' is {parsed_ratio:.0%} numeric but contains non-numeric placeholder(s): {shown}.",
-                        action_taken=f"Treated {shown} as missing and converted column to numeric.",
-                    ))
-                    series = pd.to_numeric(series, errors="coerce")
+        series, mixed_type_finding = coerce_mixed_type_column(col, series, mixed_type_threshold)
+        if mixed_type_finding:
+            findings.append(mixed_type_finding)
 
         non_null = series.dropna()
         unique_count = non_null.nunique()
@@ -103,63 +92,15 @@ def profile(
             if missing_count / len(df) > missing_threshold:
                 continue
 
-        if pd.api.types.is_numeric_dtype(series):
-            q1, q3 = non_null.quantile([0.25, 0.75])
-            iqr = q3 - q1
-            if iqr > 0:
-                lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
-                outlier_count = int(((non_null < lower) | (non_null > upper)).sum())
-                if outlier_count > 0:
-                    findings.append(Finding(
-                        column=col,
-                        issue_type="outliers",
-                        confidence=0.7,
-                        detail=f"Column '{col}' has {outlier_count} value(s) outside the IQR bounds [{lower:.2f}, {upper:.2f}].",
-                        action_taken=f"Capped values to [{lower:.2f}, {upper:.2f}].",
-                    ))
+        outlier_finding = find_outliers(col, series, non_null)
+        if outlier_finding:
+            findings.append(outlier_finding)
 
-        if not pd.api.types.is_numeric_dtype(series):
-            scale = match_ordinal_scale(non_null)
-            if scale:
-                findings.append(Finding(
-                    column=col,
-                    issue_type="categorical_encoding",
-                    confidence=0.95,
-                    detail=f"Column '{col}' values follow a natural order ({' < '.join(scale)}).",
-                    action_taken=f"Ordinal encoded using order: {' < '.join(scale)}.",
-                ))
-            elif unique_count / len(df) > max_unique_ratio:
-                findings.append(Finding(
-                    column=col,
-                    issue_type="categorical_encoding",
-                    confidence=0.85,
-                    detail=f"Column '{col}' has {unique_count} unique value(s) across {len(df)} row(s) ({unique_count / len(df):.0%} unique), which looks like an identifier or free text rather than a category.",
-                    action_taken="Dropped column (values are effectively unique per row, not encodable as categories).",
-                ))
-            elif unique_count <= max_categories:
-                findings.append(Finding(
-                    column=col,
-                    issue_type="categorical_encoding",
-                    confidence=0.9,
-                    detail=f"Column '{col}' is a text column with {unique_count} unique value(s), which most models can't use directly.",
-                    action_taken=f"One-hot encoded into {unique_count} column(s).",
-                ))
-            elif unique_count <= max_categories_bucketed:
-                kept = max_categories - 1
-                findings.append(Finding(
-                    column=col,
-                    issue_type="categorical_encoding",
-                    confidence=0.75,
-                    detail=f"Column '{col}' has {unique_count} unique values, above the {max_categories} threshold for safe one-hot encoding, but not so many that the long tail is worthless.",
-                    action_taken=f"Kept the {kept} most frequent value(s), bucketed the rest into 'other', then one-hot encoded into {max_categories} column(s).",
-                ))
-            else:
-                findings.append(Finding(
-                    column=col,
-                    issue_type="categorical_encoding",
-                    confidence=0.8,
-                    detail=f"Column '{col}' has {unique_count} unique values, above the {max_categories_bucketed} threshold even for bucketing rare categories.",
-                    action_taken="Dropped column (too many categories to encode usefully).",
-                ))
+        categorical_finding = find_categorical_encoding(
+            col, series, non_null, unique_count, len(df),
+            max_categories, max_unique_ratio, max_categories_bucketed,
+        )
+        if categorical_finding:
+            findings.append(categorical_finding)
 
     return findings
