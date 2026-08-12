@@ -187,3 +187,103 @@ def test_categorical_dropped_when_too_many_even_for_bucketing():
     assert findings[0].confidence == 0.8
     assert "60 unique values" in findings[0].detail
     assert findings[0].action_taken == "Dropped column (too many categories to encode usefully)."
+
+
+def test_data_leakage_detected_above_threshold():
+    df = pd.DataFrame({
+        "target": [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        "leaky_col": [10, 10, 10, 10, 10, 10, 10, 10, 100, 100],
+        "other_col": [5, 3, 8, 1, 9, 4, 7, 2, 6, 10],
+    })
+    findings = profile(df, target="target")
+    leakage = [f for f in findings if f.issue_type == "data_leakage"]
+    assert len(leakage) == 1
+    assert leakage[0].column == "leaky_col"
+    assert leakage[0].confidence == 1.0
+    assert "leaky_col' is 100% correlated with target 'target'" in leakage[0].detail
+    assert leakage[0].action_taken == "Flagged only (not auto-dropped — review before training on this column)."
+    # the uncorrelated column must not be flagged
+    assert all(f.column != "other_col" for f in leakage)
+
+
+def test_no_leakage_below_threshold():
+    df = pd.DataFrame({
+        "target": [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        "other_col": [5, 3, 8, 1, 9, 4, 7, 2, 6, 10],
+    })
+    findings = [f for f in profile(df, target="target") if f.issue_type == "data_leakage"]
+    assert findings == []
+
+
+def test_no_leakage_when_target_not_numeric():
+    df = pd.DataFrame({
+        "target": ["a", "b", "a", "b", "a", "b", "a", "b", "a", "b"],
+        "numeric_col": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+    })
+    findings = [f for f in profile(df, target="target") if f.issue_type == "data_leakage"]
+    assert findings == []
+
+
+def test_class_imbalance_detected_for_numeric_target():
+    df = pd.DataFrame({"target": [0] * 19 + [1]})
+    findings = [f for f in profile(df, target="target") if f.issue_type == "class_imbalance"]
+    assert len(findings) == 1
+    assert findings[0].column == "target"
+    assert findings[0].confidence == 0.95
+    assert "95% class '0'" in findings[0].detail
+
+
+def test_class_imbalance_detected_for_text_target():
+    df = pd.DataFrame({"target": ["no"] * 19 + ["yes"]})
+    findings = [f for f in profile(df, target="target") if f.issue_type == "class_imbalance"]
+    assert len(findings) == 1
+    assert "95% class 'no'" in findings[0].detail
+
+
+def test_no_class_imbalance_below_threshold():
+    df = pd.DataFrame({"target": [0] * 8 + [1] * 2})  # 80%, below the 90% threshold
+    findings = [f for f in profile(df, target="target") if f.issue_type == "class_imbalance"]
+    assert findings == []
+
+
+def test_no_class_imbalance_for_high_cardinality_target():
+    # a regression-style target (every value unique) isn't a classification
+    # target, so the imbalance check should not apply to it at all.
+    df = pd.DataFrame({"target": list(range(20)), "other": list(range(20, 40))})
+    findings = [f for f in profile(df, target="target") if f.issue_type == "class_imbalance"]
+    assert findings == []
+
+
+def test_multicollinearity_detected_above_threshold():
+    df = pd.DataFrame({
+        "col_a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "col_b": [3, 5, 7, 9, 11, 13, 15, 17, 19, 21],
+        "col_c": [5, 3, 8, 1, 9, 4, 7, 2, 6, 10],
+    })
+    findings = [f for f in profile(df) if f.issue_type == "multicollinearity"]
+    assert len(findings) == 1
+    assert findings[0].column == "col_a & col_b"
+    assert findings[0].confidence == 1.0
+    assert "'col_a' and 'col_b' are 100% correlated" in findings[0].detail
+    assert findings[0].action_taken == "Flagged only (consider dropping one of the two)."
+
+
+def test_no_multicollinearity_below_threshold():
+    df = pd.DataFrame({
+        "col_a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "col_c": [5, 3, 8, 1, 9, 4, 7, 2, 6, 10],
+    })
+    findings = [f for f in profile(df) if f.issue_type == "multicollinearity"]
+    assert findings == []
+
+
+def test_multicollinearity_excludes_target_column():
+    # target itself is perfectly correlated with col_a here, but the
+    # multicollinearity screen only compares predictor columns to each
+    # other, never to the target (that's leakage's job).
+    df = pd.DataFrame({
+        "target": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "col_a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    })
+    findings = [f for f in profile(df, target="target") if f.issue_type == "multicollinearity"]
+    assert findings == []
