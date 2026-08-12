@@ -96,3 +96,49 @@ def test_mixed_type_column_left_as_text_below_threshold():
     result = clean(df)
     # dropped as a high-cardinality identifier, not coerced to numeric
     assert "a" not in result.columns
+
+
+def test_categorical_ordinal_tier_mapped_to_ints():
+    df = pd.DataFrame({"anchor": range(9), "a": ["low", "medium", "high"] * 3})
+    result = clean(df)
+    assert result["a"].tolist() == [0, 1, 2, 0, 1, 2, 0, 1, 2]
+
+
+def test_categorical_one_hot_tier_produces_dummy_columns():
+    df = pd.DataFrame({"anchor": range(8), "a": ["red", "green", "blue", "yellow"] * 2})
+    result = clean(df)
+    assert "a" not in result.columns
+    assert sorted(c for c in result.columns if c.startswith("a_")) == ["a_blue", "a_green", "a_red", "a_yellow"]
+
+
+def test_categorical_identifier_tier_dropped():
+    df = pd.DataFrame({"anchor": range(10), "a": [f"name_{i}" for i in range(10)]})
+    result = clean(df)
+    assert "a" not in result.columns
+
+
+def test_categorical_bucketed_tier_keeps_top_14_plus_other():
+    common_counts = [3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2]  # 14 labels, sums to 34
+    rare_counts = [1, 1, 1, 1, 1, 1]  # 6 labels, sums to 6
+    values = []
+    for idx, c in enumerate(common_counts):
+        values += [f"cat_{idx:02d}"] * c
+    for idx, c in enumerate(rare_counts):
+        values += [f"cat_{14 + idx:02d}"] * c
+    df = pd.DataFrame({"anchor": range(len(values)), "a": values})
+
+    result = clean(df)
+    dummy_cols = sorted(c for c in result.columns if c.startswith("a_"))
+    assert len(dummy_cols) == 15
+    assert "a_other" in dummy_cols
+    assert result["a_other"].sum() == 6  # the 6 rare, once-each categories
+
+
+def test_categorical_dropped_when_too_many_even_for_bucketing():
+    values = []
+    for i in range(60):
+        values += [f"cat_{i:03d}"] * 2
+    df = pd.DataFrame({"anchor": range(len(values)), "a": values})
+    result = clean(df)
+    assert "a" not in result.columns
+    assert not any(c.startswith("a_") for c in result.columns)

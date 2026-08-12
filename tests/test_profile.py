@@ -126,3 +126,64 @@ def test_mixed_type_column_not_flagged_below_threshold():
     categorical = [f for f in findings if f.issue_type == "categorical_encoding"]
     assert len(categorical) == 1
     assert "identifier" in categorical[0].detail
+
+
+def test_categorical_ordinal_tier():
+    df = pd.DataFrame({"anchor": range(9), "a": ["low", "medium", "high"] * 3})
+    findings = [f for f in profile(df) if f.issue_type == "categorical_encoding"]
+    assert len(findings) == 1
+    assert findings[0].confidence == 0.95
+    assert "natural order (low < medium < high)" in findings[0].detail
+    assert findings[0].action_taken == "Ordinal encoded using order: low < medium < high."
+
+
+def test_categorical_one_hot_tier():
+    df = pd.DataFrame({"anchor": range(8), "a": ["red", "green", "blue", "yellow"] * 2})
+    findings = [f for f in profile(df) if f.issue_type == "categorical_encoding"]
+    assert len(findings) == 1
+    assert findings[0].confidence == 0.9
+    assert "4 unique value(s)" in findings[0].detail
+    assert findings[0].action_taken == "One-hot encoded into 4 column(s)."
+
+
+def test_categorical_identifier_tier():
+    df = pd.DataFrame({"anchor": range(10), "a": [f"name_{i}" for i in range(10)]})
+    findings = [f for f in profile(df) if f.issue_type == "categorical_encoding"]
+    assert len(findings) == 1
+    assert findings[0].confidence == 0.85
+    assert "identifier or free text" in findings[0].detail
+    assert findings[0].action_taken == "Dropped column (values are effectively unique per row, not encodable as categories)."
+
+
+def test_categorical_bucketed_tier():
+    # 20 unique values (above max_categories=15, at or below max_categories_bucketed=50):
+    # keep the 14 most frequent, bucket the rest into "other".
+    common_counts = [3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2]  # 14 labels, sums to 34
+    rare_counts = [1, 1, 1, 1, 1, 1]  # 6 labels, sums to 6
+    values = []
+    for idx, c in enumerate(common_counts):
+        values += [f"cat_{idx:02d}"] * c
+    for idx, c in enumerate(rare_counts):
+        values += [f"cat_{14 + idx:02d}"] * c
+    df = pd.DataFrame({"anchor": range(len(values)), "a": values})
+
+    findings = [f for f in profile(df) if f.issue_type == "categorical_encoding"]
+    assert len(findings) == 1
+    assert findings[0].confidence == 0.75
+    assert "20 unique values" in findings[0].detail
+    assert findings[0].action_taken == "Kept the 14 most frequent value(s), bucketed the rest into 'other', then one-hot encoded into 15 column(s)."
+
+
+def test_categorical_dropped_when_too_many_even_for_bucketing():
+    # 60 unique values, each appearing twice (ratio stays at 0.5, so it's not
+    # caught by the identifier check) -> above max_categories_bucketed(50), dropped outright.
+    values = []
+    for i in range(60):
+        values += [f"cat_{i:03d}"] * 2
+    df = pd.DataFrame({"anchor": range(len(values)), "a": values})
+
+    findings = [f for f in profile(df) if f.issue_type == "categorical_encoding"]
+    assert len(findings) == 1
+    assert findings[0].confidence == 0.8
+    assert "60 unique values" in findings[0].detail
+    assert findings[0].action_taken == "Dropped column (too many categories to encode usefully)."
