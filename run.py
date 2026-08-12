@@ -34,6 +34,11 @@ def main():
         "--target",
         help="Name of the target/label column. Flags other columns suspiciously correlated with it (data leakage).",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview what would change without writing the cleaned CSV.",
+    )
     args = parser.parse_args()
 
     try:
@@ -72,15 +77,18 @@ def main():
     report_text = report(findings, df.shape, cleaned_df.shape)
 
     stem = Path(args.input_csv).stem
-    cleaned_path = f"cleaned_{stem}.csv"
     report_path = f"report_{stem}.md"
 
-    cleaned_df.to_csv(cleaned_path, index=False)
     with open(report_path, "w") as f:
         f.write(report_text)
 
     print(f"Scanned {args.input_csv}: {len(findings)} issue(s) found.")
-    print(f"Wrote {cleaned_path} and {report_path}.")
+    if args.dry_run:
+        print(f"Dry run: wrote {report_path} only. No cleaned CSV was written.")
+    else:
+        cleaned_path = f"cleaned_{stem}.csv"
+        cleaned_df.to_csv(cleaned_path, index=False)
+        print(f"Wrote {cleaned_path} and {report_path}.")
 
 
 if __name__ == "__main__":
