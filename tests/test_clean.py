@@ -80,3 +80,19 @@ def test_no_capping_when_values_are_tight():
     })
     result = clean(df)
     assert result["a"].tolist() == [50, 52, 49, 51, 53, 48, 52, 50, 51, 54]
+
+
+def test_mixed_type_column_coerced_to_numeric_above_threshold():
+    # the "unknown" stray becomes missing, then gets median-filled like any
+    # other numeric missing value.
+    df = pd.DataFrame({"a": ["10", "11", "12", "13", "14", "15", "16", "17", "18", "unknown"]})
+    result = clean(df)
+    assert result["a"].dtype.kind == "f"
+    assert result["a"].tolist() == [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 14.0]
+
+
+def test_mixed_type_column_left_as_text_below_threshold():
+    df = pd.DataFrame({"a": ["1", "2", "3", "4", "5", "a", "b", "c", "d", "e"]})
+    result = clean(df)
+    # dropped as a high-cardinality identifier, not coerced to numeric
+    assert "a" not in result.columns

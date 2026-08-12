@@ -95,3 +95,34 @@ def test_no_outliers_when_values_are_tight():
     })
     findings = [f for f in profile(df) if f.issue_type == "outliers"]
     assert findings == []
+
+
+def test_mixed_type_column_detected_above_threshold():
+    # 9/10 values parse as numeric (90%, above the default 0.8 threshold) ->
+    # flagged as mixed-type, the stray gets coerced to missing, then the
+    # regular missing-value check fires on top with a median fill.
+    df = pd.DataFrame({"a": ["10", "11", "12", "13", "14", "15", "16", "17", "18", "unknown"]})
+    findings = profile(df)
+
+    mixed = [f for f in findings if f.issue_type == "mixed_type_column"]
+    assert len(mixed) == 1
+    assert mixed[0].confidence == 0.9
+    assert "90% numeric" in mixed[0].detail
+    assert "unknown" in mixed[0].detail
+    assert mixed[0].action_taken == "Treated unknown as missing and converted column to numeric."
+
+    missing = [f for f in findings if f.issue_type == "missing_values"]
+    assert len(missing) == 1
+    assert "median (14.0)" in missing[0].action_taken
+
+
+def test_mixed_type_column_not_flagged_below_threshold():
+    # only 5/10 values parse as numeric (50%, below the 0.8 threshold) -> not
+    # mixed-type, stays a plain (all-unique) text column and gets dropped as
+    # an identifier instead.
+    df = pd.DataFrame({"a": ["1", "2", "3", "4", "5", "a", "b", "c", "d", "e"]})
+    findings = profile(df)
+    assert [f for f in findings if f.issue_type == "mixed_type_column"] == []
+    categorical = [f for f in findings if f.issue_type == "categorical_encoding"]
+    assert len(categorical) == 1
+    assert "identifier" in categorical[0].detail
