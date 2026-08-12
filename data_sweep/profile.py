@@ -2,6 +2,9 @@ from typing import Optional
 
 import pandas as pd
 
+from data_sweep.detectors.constant import find_constant_column
+from data_sweep.detectors.duplicates import find_duplicate_rows
+from data_sweep.detectors.missing import find_missing_values
 from data_sweep.findings import Finding
 from data_sweep.ordinal import match_ordinal_scale
 
@@ -20,15 +23,7 @@ def profile(
 ) -> list[Finding]:
     findings = []
 
-    dup_count = int(df.duplicated().sum())
-    if dup_count > 0:
-        findings.append(Finding(
-            column="(all)",
-            issue_type="duplicate_rows",
-            confidence=1.0,
-            detail=f"Found {dup_count} duplicate row(s) that are exact copies of other rows.",
-            action_taken=f"Removed {dup_count} duplicate row(s), keeping the first occurrence.",
-        ))
+    findings.extend(find_duplicate_rows(df))
 
     if target and target in df.columns and pd.api.types.is_numeric_dtype(df[target]):
         for col in df.columns:
@@ -96,46 +91,17 @@ def profile(
         non_null = series.dropna()
         unique_count = non_null.nunique()
 
-        if unique_count <= 1:
-            if unique_count == 1:
-                detail = f"Column '{col}' has only one unique value ('{non_null.iloc[0]}') across all rows, so it carries no information."
-            else:
-                detail = f"Column '{col}' has no non-missing values, so it carries no information."
-            findings.append(Finding(
-                column=col,
-                issue_type="constant_column",
-                confidence=1.0,
-                detail=detail,
-                action_taken="Dropped column.",
-            ))
+        constant_finding = find_constant_column(col, non_null, unique_count)
+        if constant_finding:
+            findings.append(constant_finding)
             continue
 
         missing_count = int(series.isna().sum())
-        if missing_count > 0:
-            missing_pct = missing_count / len(df)
-            if missing_pct > missing_threshold:
-                findings.append(Finding(
-                    column=col,
-                    issue_type="missing_values",
-                    confidence=1.0,
-                    detail=f"Column '{col}' is missing {missing_pct:.0%} of its values, above the {missing_threshold:.0%} threshold.",
-                    action_taken="Dropped column (too much missing data to impute reliably).",
-                ))
+        missing_finding = find_missing_values(col, series, non_null, len(df), missing_threshold)
+        if missing_finding:
+            findings.append(missing_finding)
+            if missing_count / len(df) > missing_threshold:
                 continue
-            else:
-                if pd.api.types.is_numeric_dtype(series):
-                    fill_value = non_null.median()
-                    strategy = "median"
-                else:
-                    fill_value = non_null.mode().iloc[0]
-                    strategy = "mode"
-                findings.append(Finding(
-                    column=col,
-                    issue_type="missing_values",
-                    confidence=1.0,
-                    detail=f"Column '{col}' is missing {missing_count} value(s) ({missing_pct:.0%}).",
-                    action_taken=f"Filled missing values with the column's {strategy} ({fill_value}).",
-                ))
 
         if pd.api.types.is_numeric_dtype(series):
             q1, q3 = non_null.quantile([0.25, 0.75])
