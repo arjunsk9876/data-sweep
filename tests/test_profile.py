@@ -65,9 +65,11 @@ def test_missing_under_threshold_reports_mode_fill_for_text():
 
 
 def test_missing_over_threshold_reports_column_drop():
-    # needs 2+ distinct non-null values, otherwise the constant-column check
-    # (which runs first) catches it before the missing-value check does.
-    df = pd.DataFrame({"a": [1.0, 2.0, None, None, None]})
+    # anchor column keeps the three all-null rows from collapsing into one
+    # via profile()'s own drop_duplicates (NaN == NaN for dedup purposes); "a"
+    # itself needs 2+ distinct non-null values so the constant-column check
+    # (which runs first) doesn't catch it before the missing-value check does.
+    df = pd.DataFrame({"anchor": [1, 2, 3, 4, 5], "a": [1.0, 2.0, None, None, None]})
     findings = [f for f in profile(df, missing_threshold=0.5) if f.issue_type == "missing_values"]
     assert len(findings) == 1
     assert findings[0].action_taken == "Dropped column (too much missing data to impute reliably)."
@@ -225,7 +227,10 @@ def test_no_leakage_when_target_not_numeric():
 
 
 def test_class_imbalance_detected_for_numeric_target():
-    df = pd.DataFrame({"target": [0] * 19 + [1]})
+    # anchor column keeps the 19 repeated "0" rows from collapsing into one
+    # via profile()'s own drop_duplicates, which would flip a 95% majority
+    # into a 50/50 split.
+    df = pd.DataFrame({"anchor": range(20), "target": [0] * 19 + [1]})
     findings = [f for f in profile(df, target="target") if f.issue_type == "class_imbalance"]
     assert len(findings) == 1
     assert findings[0].column == "target"
@@ -234,14 +239,14 @@ def test_class_imbalance_detected_for_numeric_target():
 
 
 def test_class_imbalance_detected_for_text_target():
-    df = pd.DataFrame({"target": ["no"] * 19 + ["yes"]})
+    df = pd.DataFrame({"anchor": range(20), "target": ["no"] * 19 + ["yes"]})
     findings = [f for f in profile(df, target="target") if f.issue_type == "class_imbalance"]
     assert len(findings) == 1
     assert "95% class 'no'" in findings[0].detail
 
 
 def test_no_class_imbalance_below_threshold():
-    df = pd.DataFrame({"target": [0] * 8 + [1] * 2})  # 80%, below the 90% threshold
+    df = pd.DataFrame({"anchor": range(10), "target": [0] * 8 + [1] * 2})  # 80%, below the 90% threshold
     findings = [f for f in profile(df, target="target") if f.issue_type == "class_imbalance"]
     assert findings == []
 

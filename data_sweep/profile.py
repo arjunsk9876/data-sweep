@@ -29,6 +29,15 @@ def profile(
     findings = []
 
     findings.extend(find_duplicate_rows(df))
+
+    # clean() drops duplicate rows before doing anything else, so every other
+    # detector needs to look at the same post-dedup data clean() will actually
+    # act on — otherwise a stat like a missing-value percentage, an IQR bound,
+    # or a unique-value ratio can land on a different side of a threshold here
+    # than it does in clean(), and the report ends up describing an action
+    # clean() didn't actually take.
+    df = df.drop_duplicates()
+
     findings.extend(find_data_leakage(df, target, leakage_threshold))
     findings.extend(find_class_imbalance(df, target, max_categories, imbalance_threshold))
     findings.extend(find_multicollinearity(df, target, multicollinearity_threshold))
