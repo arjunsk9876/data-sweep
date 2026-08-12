@@ -5,16 +5,23 @@ import pandas as pd
 from data_sweep.findings import Finding
 
 
-def find_outliers(col: str, series: pd.Series, non_null: pd.Series) -> Optional[Finding]:
-    if not pd.api.types.is_numeric_dtype(series):
-        return None
-
+def compute_iqr_bounds(non_null: pd.Series) -> Optional[tuple[float, float]]:
     q1, q3 = non_null.quantile([0.25, 0.75])
     iqr = q3 - q1
     if iqr <= 0:
         return None
+    return q1 - 1.5 * iqr, q3 + 1.5 * iqr
 
-    lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+
+def find_outliers(col: str, series: pd.Series, non_null: pd.Series) -> Optional[Finding]:
+    if not pd.api.types.is_numeric_dtype(series):
+        return None
+
+    bounds = compute_iqr_bounds(non_null)
+    if bounds is None:
+        return None
+
+    lower, upper = bounds
     outlier_count = int(((non_null < lower) | (non_null > upper)).sum())
     if outlier_count == 0:
         return None

@@ -5,8 +5,12 @@ import pandas as pd
 from data_sweep.findings import Finding
 
 
+def is_constant(unique_count: int) -> bool:
+    return unique_count <= 1
+
+
 def find_constant_column(col: str, non_null: pd.Series, unique_count: int) -> Optional[Finding]:
-    if unique_count > 1:
+    if not is_constant(unique_count):
         return None
     if unique_count == 1:
         detail = f"Column '{col}' has only one unique value ('{non_null.iloc[0]}') across all rows, so it carries no information."

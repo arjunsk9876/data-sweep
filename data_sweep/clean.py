@@ -1,6 +1,11 @@
 import pandas as pd
 
-from data_sweep.ordinal import match_ordinal_scale, ordinal_mapping
+from data_sweep.detectors.categorical import classify_categorical
+from data_sweep.detectors.constant import is_constant
+from data_sweep.detectors.missing import missing_fill_decision
+from data_sweep.detectors.mixed_type import coerce_mixed_type_column
+from data_sweep.detectors.outliers import compute_iqr_bounds
+from data_sweep.ordinal import ordinal_mapping
 
 
 def clean(
@@ -14,57 +19,51 @@ def clean(
     df = df.drop_duplicates().reset_index(drop=True)
 
     for col in list(df.columns):
-        if not pd.api.types.is_numeric_dtype(df[col]):
-            non_null_raw = df[col].dropna()
-            if len(non_null_raw) > 0:
-                coerced_raw = pd.to_numeric(non_null_raw, errors="coerce")
-                parsed_ratio = coerced_raw.notna().mean()
-                if mixed_type_threshold <= parsed_ratio < 1.0:
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
+        df[col], _ = coerce_mixed_type_column(col, df[col], mixed_type_threshold)
 
-        unique_count = df[col].nunique(dropna=True)
+        non_null = df[col].dropna()
+        unique_count = non_null.nunique()
 
-        if unique_count <= 1:
+        if is_constant(unique_count):
             df = df.drop(columns=[col])
             continue
 
-        missing_count = df[col].isna().sum()
-        if missing_count > 0:
-            missing_pct = missing_count / len(df)
-            if missing_pct > missing_threshold:
+        if df[col].isna().sum() > 0:
+            should_drop, fill_value = missing_fill_decision(df[col], non_null, len(df), missing_threshold)
+            if should_drop:
                 df = df.drop(columns=[col])
                 continue
-            else:
-                if pd.api.types.is_numeric_dtype(df[col]):
-                    fill_value = df[col].median()
-                else:
-                    fill_value = df[col].mode().iloc[0]
-                df[col] = df[col].fillna(fill_value)
+            df[col] = df[col].fillna(fill_value)
+
+        # re-read fresh (post-fill): a filled value is now part of the column,
+        # so bounds/bucketing must be computed from what's actually there, not
+        # from the pre-fill snapshot. unique_count deliberately stays stale,
+        # matching the original clean()'s behavior.
+        non_null = df[col].dropna()
 
         if pd.api.types.is_numeric_dtype(df[col]):
-            q1, q3 = df[col].quantile([0.25, 0.75])
-            iqr = q3 - q1
-            if iqr > 0:
-                lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+            bounds = compute_iqr_bounds(non_null)
+            if bounds:
+                lower, upper = bounds
                 df[col] = df[col].clip(lower, upper)
 
         if not pd.api.types.is_numeric_dtype(df[col]):
-            scale = match_ordinal_scale(df[col].dropna())
-            if scale:
-                df[col] = df[col].map(ordinal_mapping(df[col], scale))
-            elif unique_count / len(df) > max_unique_ratio:
+            decision = classify_categorical(non_null, unique_count, len(df), max_categories, max_unique_ratio, max_categories_bucketed)
+
+            if decision.tier == "ordinal":
+                df[col] = df[col].map(ordinal_mapping(df[col], decision.scale))
+            elif decision.tier == "identifier":
                 df = df.drop(columns=[col])
-            elif unique_count <= max_categories:
+            elif decision.tier == "one_hot":
                 dummies = pd.get_dummies(df[col], prefix=col)
                 col_pos = df.columns.get_loc(col)
                 df = pd.concat([df.iloc[:, :col_pos], dummies, df.iloc[:, col_pos + 1:]], axis=1)
-            elif unique_count <= max_categories_bucketed:
-                top_categories = df[col].value_counts().nlargest(max_categories - 1).index
-                bucketed = df[col].where(df[col].isin(top_categories), other="other")
+            elif decision.tier == "bucketed":
+                bucketed = df[col].where(df[col].isin(decision.kept_categories), other="other")
                 dummies = pd.get_dummies(bucketed, prefix=col)
                 col_pos = df.columns.get_loc(col)
                 df = pd.concat([df.iloc[:, :col_pos], dummies, df.iloc[:, col_pos + 1:]], axis=1)
-            else:
+            else:  # drop
                 df = df.drop(columns=[col])
 
     return df

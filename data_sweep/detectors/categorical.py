@@ -1,9 +1,42 @@
+from dataclasses import dataclass
 from typing import Optional
 
 import pandas as pd
 
 from data_sweep.findings import Finding
 from data_sweep.ordinal import match_ordinal_scale
+
+
+@dataclass
+class CategoricalDecision:
+    tier: str  # "ordinal" | "identifier" | "one_hot" | "bucketed" | "drop"
+    scale: Optional[list[str]] = None
+    kept_categories: Optional[pd.Index] = None
+
+
+def classify_categorical(
+    non_null: pd.Series,
+    unique_count: int,
+    total_rows: int,
+    max_categories: int,
+    max_unique_ratio: float,
+    max_categories_bucketed: int,
+) -> CategoricalDecision:
+    scale = match_ordinal_scale(non_null)
+    if scale:
+        return CategoricalDecision(tier="ordinal", scale=scale)
+
+    if unique_count / total_rows > max_unique_ratio:
+        return CategoricalDecision(tier="identifier")
+
+    if unique_count <= max_categories:
+        return CategoricalDecision(tier="one_hot")
+
+    if unique_count <= max_categories_bucketed:
+        kept_categories = non_null.value_counts().nlargest(max_categories - 1).index
+        return CategoricalDecision(tier="bucketed", kept_categories=kept_categories)
+
+    return CategoricalDecision(tier="drop")
 
 
 def find_categorical_encoding(
@@ -19,17 +52,18 @@ def find_categorical_encoding(
     if pd.api.types.is_numeric_dtype(series):
         return None
 
-    scale = match_ordinal_scale(non_null)
-    if scale:
+    decision = classify_categorical(non_null, unique_count, total_rows, max_categories, max_unique_ratio, max_categories_bucketed)
+
+    if decision.tier == "ordinal":
         return Finding(
             column=col,
             issue_type="categorical_encoding",
             confidence=0.95,
-            detail=f"Column '{col}' values follow a natural order ({' < '.join(scale)}).",
-            action_taken=f"Ordinal encoded using order: {' < '.join(scale)}.",
+            detail=f"Column '{col}' values follow a natural order ({' < '.join(decision.scale)}).",
+            action_taken=f"Ordinal encoded using order: {' < '.join(decision.scale)}.",
         )
 
-    if unique_count / total_rows > max_unique_ratio:
+    if decision.tier == "identifier":
         return Finding(
             column=col,
             issue_type="categorical_encoding",
@@ -38,7 +72,7 @@ def find_categorical_encoding(
             action_taken="Dropped column (values are effectively unique per row, not encodable as categories).",
         )
 
-    if unique_count <= max_categories:
+    if decision.tier == "one_hot":
         return Finding(
             column=col,
             issue_type="categorical_encoding",
@@ -47,7 +81,7 @@ def find_categorical_encoding(
             action_taken=f"One-hot encoded into {unique_count} column(s).",
         )
 
-    if unique_count <= max_categories_bucketed:
+    if decision.tier == "bucketed":
         kept = max_categories - 1
         return Finding(
             column=col,
