@@ -55,6 +55,7 @@ def find_categorical_encoding(
     decision = classify_categorical(non_null, unique_count, total_rows, max_categories, max_unique_ratio, max_categories_bucketed)
 
     if decision.tier == "ordinal":
+        assert decision.scale is not None
         return Finding(
             column=col,
             issue_type="categorical_encoding",

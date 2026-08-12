@@ -51,6 +51,7 @@ def clean(
             decision = classify_categorical(non_null, unique_count, len(df), max_categories, max_unique_ratio, max_categories_bucketed)
 
             if decision.tier == "ordinal":
+                assert decision.scale is not None
                 df[col] = df[col].map(ordinal_mapping(df[col], decision.scale))
             elif decision.tier == "identifier":
                 df = df.drop(columns=[col])

@@ -14,11 +14,17 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "mypy>=1.0",
 ]
 
 [project.scripts]
 data-sweep = "run:main"
 
 [tool.setuptools]
-packages = ["data_sweep"]
+packages = ["data_sweep", "data_sweep.detectors"]
 py-modules = ["run"]
+
+[tool.mypy]
+python_version = "3.9"
+files = ["data_sweep", "run.py"]
+ignore_missing_imports = true
