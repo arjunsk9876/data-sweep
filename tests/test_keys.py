@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from data_sweep.entity_leakage.keys import score_candidate_keys
 from tests.synthetic import make_leaky_split, make_no_entity_structure
@@ -24,29 +25,56 @@ def test_low_cardinality_column_excluded():
 
 def test_grouping_band_column_included():
     # 50 entities across 500 rows -> ratio 0.1, squarely in the grouping band
-    df = pd.DataFrame({"household_id": [f"h{i % 50}" for i in range(500)]})
+    # (name deliberately has no id/key/etc keyword, to isolate the uniqueness signal)
+    df = pd.DataFrame({"widget_ref": [f"h{i % 50}" for i in range(500)]})
     candidates = score_candidate_keys(df)
     assert len(candidates) == 1
-    assert candidates[0].column == "household_id"
+    assert candidates[0].column == "widget_ref"
     assert candidates[0].uniqueness_ratio == 0.1
     assert candidates[0].signals == ["uniqueness"]
 
 
 def test_format_signal_boosts_score_and_ranks_above_plain_uniqueness():
+    # column names deliberately avoid id/key/etc keywords, to isolate the format signal
     df = pd.DataFrame({
         # 50 entities across 500 rows, zero-padded -> uniqueness + format
-        "device_id": [f"{i % 50:05d}" for i in range(500)],
+        "col_zeropad": [f"{i % 50:05d}" for i in range(500)],
         # same grouping-band shape, plain digits -> uniqueness only
-        "household_id": [f"{i % 50}" for i in range(500)],
+        "col_plain": [f"{i % 50}" for i in range(500)],
     })
     candidates = score_candidate_keys(df)
     by_col = {c.column: c for c in candidates}
 
-    assert by_col["device_id"].signals == ["uniqueness", "format"]
-    assert by_col["household_id"].signals == ["uniqueness"]
-    assert by_col["device_id"].score > by_col["household_id"].score
+    assert by_col["col_zeropad"].signals == ["uniqueness", "format"]
+    assert by_col["col_plain"].signals == ["uniqueness"]
+    assert by_col["col_zeropad"].score > by_col["col_plain"].score
     # format signal should rank the ID-formatted column first
-    assert candidates[0].column == "device_id"
+    assert candidates[0].column == "col_zeropad"
+
+
+def test_name_signal_boosts_score_and_ranks_above_plain_uniqueness():
+    # values are plain (no format signal either way) so this isolates the name signal
+    df = pd.DataFrame({
+        # keyword in the name -> uniqueness + name
+        "household_id": [f"{i % 50}" for i in range(500)],
+        # same grouping-band shape, neutral name -> uniqueness only
+        "widget_ref": [f"{i % 50}" for i in range(500)],
+    })
+    candidates = score_candidate_keys(df)
+    by_col = {c.column: c for c in candidates}
+
+    assert by_col["household_id"].signals == ["uniqueness", "name"]
+    assert by_col["widget_ref"].signals == ["uniqueness"]
+    assert by_col["household_id"].score > by_col["widget_ref"].score
+    assert candidates[0].column == "household_id"
+
+
+def test_all_three_signals_compound():
+    # zero-padded values + id-hinting name -> uniqueness + format + name
+    df = pd.DataFrame({"customer_id": [f"{i % 50:05d}" for i in range(500)]})
+    candidates = score_candidate_keys(df)
+    assert candidates[0].signals == ["uniqueness", "format", "name"]
+    assert candidates[0].score == pytest.approx(1.0 + 0.15 + 0.1)
 
 
 def test_boundary_ratios_are_inclusive():
