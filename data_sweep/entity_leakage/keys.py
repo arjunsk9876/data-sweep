@@ -3,6 +3,8 @@ from typing import List
 
 import pandas as pd
 
+from data_sweep.entity_leakage.format_signal import detect_format_signal
+
 DEFAULT_MIN_UNIQUENESS_RATIO = 0.02
 DEFAULT_MAX_UNIQUENESS_RATIO = 0.95
 
@@ -10,6 +12,7 @@ DEFAULT_MAX_UNIQUENESS_RATIO = 0.95
 # (must be in the grouping band to be a candidate at all), format/name are
 # additive boosts used to rank among candidates, never gates themselves.
 UNIQUENESS_SCORE = 1.0
+FORMAT_SIGNAL_BOOST = 0.15
 
 
 @dataclass
@@ -39,13 +42,22 @@ def score_candidate_keys(
     candidates = []
     for col in df.columns:
         uniqueness_ratio = df[col].nunique(dropna=True) / n_rows
-        if min_uniqueness_ratio <= uniqueness_ratio <= max_uniqueness_ratio:
-            candidates.append(CandidateKey(
-                column=col,
-                uniqueness_ratio=uniqueness_ratio,
-                score=UNIQUENESS_SCORE,
-                signals=["uniqueness"],
-            ))
+        if not (min_uniqueness_ratio <= uniqueness_ratio <= max_uniqueness_ratio):
+            continue
+
+        score = UNIQUENESS_SCORE
+        signals = ["uniqueness"]
+
+        if detect_format_signal(df[col]):
+            score += FORMAT_SIGNAL_BOOST
+            signals.append("format")
+
+        candidates.append(CandidateKey(
+            column=col,
+            uniqueness_ratio=uniqueness_ratio,
+            score=score,
+            signals=signals,
+        ))
 
     candidates.sort(key=lambda c: c.score, reverse=True)
     return candidates

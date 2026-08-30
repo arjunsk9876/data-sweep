@@ -32,6 +32,23 @@ def test_grouping_band_column_included():
     assert candidates[0].signals == ["uniqueness"]
 
 
+def test_format_signal_boosts_score_and_ranks_above_plain_uniqueness():
+    df = pd.DataFrame({
+        # 50 entities across 500 rows, zero-padded -> uniqueness + format
+        "device_id": [f"{i % 50:05d}" for i in range(500)],
+        # same grouping-band shape, plain digits -> uniqueness only
+        "household_id": [f"{i % 50}" for i in range(500)],
+    })
+    candidates = score_candidate_keys(df)
+    by_col = {c.column: c for c in candidates}
+
+    assert by_col["device_id"].signals == ["uniqueness", "format"]
+    assert by_col["household_id"].signals == ["uniqueness"]
+    assert by_col["device_id"].score > by_col["household_id"].score
+    # format signal should rank the ID-formatted column first
+    assert candidates[0].column == "device_id"
+
+
 def test_boundary_ratios_are_inclusive():
     # ratio exactly 0.02 (10 uniques / 500 rows)
     df_low = pd.DataFrame({"a": [f"v{i % 10}" for i in range(500)]})
