@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from data_sweep.entity_leakage.keys import score_candidate_keys
-from tests.synthetic import make_leaky_split, make_no_entity_structure
+from tests.synthetic import make_disjoint_split, make_leaky_split, make_no_entity_structure
 
 
 def test_empty_dataframe_produces_no_candidates():
@@ -118,3 +118,44 @@ def test_synthetic_leaky_split_entity_col_detected():
 def test_synthetic_no_entity_structure_finds_no_candidates():
     train_df, _ = make_no_entity_structure(seed=0)
     assert score_candidate_keys(train_df) == []
+
+
+def test_synthetic_leaky_split_detected_on_test_side_too():
+    # inference has to work on whichever file it's run against, not just train
+    _, test_df = make_leaky_split(seed=0)
+    candidates = score_candidate_keys(test_df)
+    assert "entity_id" in {c.column for c in candidates}
+
+
+def test_synthetic_anonymized_entity_column_still_detected():
+    # PRD's core claim: works with zero naming hints. Use a name with no
+    # id/key/etc keyword, and values short enough ("E7", "T42") to also miss
+    # every format-signal pattern -- detection here can only come from
+    # uniqueness_ratio itself, nothing else.
+    train_df, test_df = make_leaky_split(entity_col="x7", seed=0)
+
+    train_candidates = score_candidate_keys(train_df)
+    by_col = {c.column: c for c in train_candidates}
+    assert "x7" in by_col
+    assert by_col["x7"].signals == ["uniqueness"]  # no name or format boost fired
+
+    test_candidates = score_candidate_keys(test_df)
+    assert "x7" in {c.column for c in test_candidates}
+
+
+def test_synthetic_disjoint_split_entity_col_still_a_candidate():
+    # candidacy is a property of one file's column shape, independent of
+    # whether it happens to overlap with another file (that's leakage.py's
+    # job, not keys.py's) -- disjoint pools shouldn't stop it being a candidate
+    train_df, test_df = make_disjoint_split(seed=0)
+    assert "entity_id" in {c.column for c in score_candidate_keys(train_df)}
+    assert "entity_id" in {c.column for c in score_candidate_keys(test_df)}
+
+
+def test_synthetic_leaky_split_feature_columns_not_flagged():
+    # only the real entity column should qualify -- the plain feature columns
+    # shouldn't accidentally land in the grouping band
+    train_df, _ = make_leaky_split(seed=0)
+    candidate_cols = {c.column for c in score_candidate_keys(train_df)}
+    assert "feature_a" not in candidate_cols
+    assert "feature_b" not in candidate_cols
