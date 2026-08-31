@@ -1,10 +1,15 @@
 import argparse
+import subprocess
+import sys
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from data_sweep.entity_leakage.cli import add_audit_subparser, run_audit
 from tests.synthetic import make_disjoint_split, make_leaky_split
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _write_csv(df: pd.DataFrame, path) -> str:
@@ -26,6 +31,45 @@ def test_add_audit_subparser_test_csv_optional():
     args = parser.parse_args(["train.csv"])
     assert args.input_csv == "train.csv"
     assert args.test_csv is None
+
+
+def test_add_audit_subparser_sets_description_and_examples():
+    parser = argparse.ArgumentParser()
+    add_audit_subparser(parser)
+    assert "inferred automatically" in parser.description
+    assert "--test test.csv" in parser.epilog
+
+
+def test_top_level_help_runs_cleanly():
+    result = subprocess.run(
+        [sys.executable, "run.py", "--help"],
+        cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert "clean" in result.stdout
+    assert "audit" in result.stdout
+    assert "Traceback" not in result.stdout and "Traceback" not in result.stderr
+
+
+def test_audit_help_runs_cleanly():
+    result = subprocess.run(
+        [sys.executable, "run.py", "audit", "--help"],
+        cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert "--test" in result.stdout
+    assert "inferred automatically" in result.stdout
+    assert "Traceback" not in result.stdout and "Traceback" not in result.stderr
+
+
+def test_audit_missing_file_via_console_exits_cleanly_no_traceback():
+    result = subprocess.run(
+        [sys.executable, "run.py", "audit", "does_not_exist.csv"],
+        cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "Error:" in result.stderr
+    assert "Traceback" not in result.stdout and "Traceback" not in result.stderr
 
 
 def test_run_audit_single_file_mode_reports_candidates(tmp_path, capsys):

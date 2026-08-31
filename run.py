@@ -64,7 +64,15 @@ def run_clean(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="data-sweep",
-        description="Scan a CSV, fix basic data quality issues, and explain what changed.",
+        description="Scan a CSV, fix common data quality issues, audit for hidden entity leakage, "
+                     "and explain what changed.",
+        epilog="examples:\n"
+               "  data-sweep clean data.csv\n"
+               "  data-sweep audit train.csv --test test.csv\n"
+               "  data-sweep audit train.csv\n"
+               "\n"
+               "Run `data-sweep <command> --help` for command-specific options.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

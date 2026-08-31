@@ -8,6 +8,16 @@ from data_sweep.entity_leakage.report import format_audit_report, format_single_
 
 
 def add_audit_subparser(parser: argparse.ArgumentParser) -> None:
+    parser.description = (
+        "Detect hidden entity/group leakage between a train and test split -- no "
+        "need to say which column is the entity key, it's inferred automatically."
+    )
+    parser.epilog = (
+        "examples:\n"
+        "  data-sweep audit train.csv --test test.csv   check for leakage between the two files\n"
+        "  data-sweep audit train.csv                   list candidate entity/group key columns only\n"
+    )
+    parser.formatter_class = argparse.RawDescriptionHelpFormatter
     parser.add_argument("input_csv", help="Path to the training/primary CSV file.")
     parser.add_argument(
         "--test",

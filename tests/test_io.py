@@ -55,3 +55,28 @@ def test_malformed_csv_raises_clean_error(tmp_path):
 
     with pytest.raises(DatasetLoadError):
         load_datasets(str(bad_path))
+
+
+def test_directory_path_raises_clean_error(tmp_path):
+    with pytest.raises(DatasetLoadError, match="directory"):
+        load_datasets(str(tmp_path))
+
+
+def test_non_utf8_binary_file_raises_clean_error(tmp_path):
+    bad_path = tmp_path / "binary.csv"
+    bad_path.write_bytes(bytes(range(256)) * 4)
+
+    with pytest.raises(DatasetLoadError, match="couldn't read"):
+        load_datasets(str(bad_path))
+
+
+def test_permission_denied_raises_clean_error(tmp_path):
+    unreadable_path = tmp_path / "unreadable.csv"
+    unreadable_path.write_text("a,b\n1,x\n")
+    unreadable_path.chmod(0o000)
+    try:
+        with pytest.raises(DatasetLoadError, match="couldn't read"):
+            load_datasets(str(unreadable_path))
+    finally:
+        # restore permissions so pytest can clean up tmp_path afterward
+        unreadable_path.chmod(0o644)
