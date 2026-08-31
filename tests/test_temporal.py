@@ -3,6 +3,7 @@ import pytest
 
 from data_sweep.entity_leakage.baseline import PredictivenessResult
 from data_sweep.entity_leakage.temporal import (
+    check_temporal_leakage,
     combine_temporal_signals,
     compute_elapsed_time_correlation,
     compute_predictiveness_signal,
@@ -224,3 +225,86 @@ def test_combine_signals_matches_synthetic_leaked_and_clean_features():
     # neither of the other two signals should fire on a clean feature
     assert clean_name is True
     assert combine_temporal_signals(clean_name, clean_corr, clean_pred) == "LOW"
+
+
+def test_check_temporal_leakage_full_confidence_flags_leaked_feature():
+    df = make_temporal_leak_dataset(seed=0)
+    findings = check_temporal_leakage(
+        df, target_col="target", event_time_col="cancel_date", record_time_col="snapshot_date",
+    )
+    by_feature = {f.feature: f for f in findings}
+    assert "total_purchases" in by_feature
+    leaked = by_feature["total_purchases"]
+    assert leaked.severity == "HIGH"
+    assert leaked.reduced_confidence is False
+    assert leaked.elapsed_time_correlation is not None
+    assert leaked.predictiveness_score is not None
+
+
+def test_check_temporal_leakage_full_confidence_does_not_flag_clean_feature():
+    df = make_temporal_leak_dataset(seed=0)
+    findings = check_temporal_leakage(
+        df, target_col="target", event_time_col="cancel_date", record_time_col="snapshot_date",
+    )
+    by_feature = {f.feature: f for f in findings}
+    # the clean control may still show up at LOW (name signal alone fires)
+    # but must never reach MEDIUM/HIGH like the leaked feature does
+    if "total_purchases_windowed" in by_feature:
+        assert by_feature["total_purchases_windowed"].severity == "LOW"
+
+
+def test_check_temporal_leakage_excludes_target_and_timestamp_columns():
+    df = make_temporal_leak_dataset(seed=0)
+    findings = check_temporal_leakage(
+        df, target_col="target", event_time_col="cancel_date", record_time_col="snapshot_date",
+    )
+    flagged_features = {f.feature for f in findings}
+    assert "target" not in flagged_features
+    assert "cancel_date" not in flagged_features
+    assert "snapshot_date" not in flagged_features
+
+
+def test_check_temporal_leakage_reduced_confidence_without_timestamps():
+    df = make_temporal_leak_dataset(seed=0)
+    findings = check_temporal_leakage(df, target_col="target")
+    by_feature = {f.feature: f for f in findings}
+    assert "total_purchases" in by_feature
+    leaked = by_feature["total_purchases"]
+    assert leaked.reduced_confidence is True
+    assert leaked.elapsed_time_correlation is None  # signal 2 never ran
+    # only 2 signals possible now (name + predictiveness), so HIGH (which
+    # needs all 3) is unreachable -- MEDIUM is the ceiling
+    assert leaked.severity in ("LOW", "MEDIUM")
+
+
+def test_check_temporal_leakage_reduced_confidence_with_only_one_timestamp():
+    # both are required for signal 2 -- providing just one should behave
+    # exactly like providing neither
+    df = make_temporal_leak_dataset(seed=0)
+    findings = check_temporal_leakage(df, target_col="target", event_time_col="cancel_date")
+    by_feature = {f.feature: f for f in findings}
+    assert by_feature["total_purchases"].reduced_confidence is True
+    assert by_feature["total_purchases"].elapsed_time_correlation is None
+
+
+def test_check_temporal_leakage_all_clean_dataset_produces_few_or_no_high_findings():
+    df = make_temporal_leak_dataset(seed=0, elapsed_leak_strength=0.0, target_leak_boost=0.0)
+    findings = check_temporal_leakage(
+        df, target_col="target", event_time_col="cancel_date", record_time_col="snapshot_date",
+    )
+    assert all(f.severity != "HIGH" for f in findings)
+
+
+def test_check_temporal_leakage_findings_ranked_worst_first():
+    df = make_temporal_leak_dataset(seed=0)
+    # add a second, medium-severity feature: matches the name pattern and
+    # correlates with elapsed time, but isn't boosted by target directly
+    df["avg_session_length"] = df["total_purchases_windowed"] + 0.5 * (
+        (df["cancel_date"] - df["snapshot_date"]).dt.total_seconds() / 86400
+    )
+    findings = check_temporal_leakage(
+        df, target_col="target", event_time_col="cancel_date", record_time_col="snapshot_date",
+    )
+    severities = [f.severity for f in findings]
+    ranks = [{"HIGH": 3, "MEDIUM": 2, "LOW": 1}[s] for s in severities]
+    assert ranks == sorted(ranks, reverse=True)

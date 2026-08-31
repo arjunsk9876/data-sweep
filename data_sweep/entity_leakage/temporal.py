@@ -4,6 +4,7 @@ from typing import List, Optional
 import pandas as pd
 
 from data_sweep.entity_leakage.baseline import PredictivenessResult, compute_predictiveness
+from data_sweep.entity_leakage.findings import TemporalLeakageFinding
 
 DEFAULT_AGGREGATION_KEYWORDS = [
     "total", "avg", "cumulative", "running", "lifetime", "ytd",
@@ -157,3 +158,79 @@ def combine_temporal_signals(
     if fired_count == 2:
         return "MEDIUM"
     return "HIGH"
+
+
+_SEVERITY_RANK = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+
+
+def rank_temporal_findings(findings: List[TemporalLeakageFinding]) -> List[TemporalLeakageFinding]:
+    """Sort temporal-leakage findings most-severe first.
+
+    Severity is the primary key; ties broken by predictiveness score, then
+    by elapsed-time correlation magnitude, so a finding with stronger raw
+    evidence at the same severity level surfaces first even though severity
+    itself is a coarse 3-level bucket.
+    """
+    return sorted(
+        findings,
+        key=lambda f: (
+            _SEVERITY_RANK[f.severity],
+            f.predictiveness_score if f.predictiveness_score is not None else 0.0,
+            abs(f.elapsed_time_correlation) if f.elapsed_time_correlation is not None else 0.0,
+        ),
+        reverse=True,
+    )
+
+
+def check_temporal_leakage(
+    df: pd.DataFrame,
+    target_col: str,
+    event_time_col: Optional[str] = None,
+    record_time_col: Optional[str] = None,
+) -> List[TemporalLeakageFinding]:
+    """Scan every numeric feature column in df for signs of temporal
+    leakage against target_col, combining all three signals per feature.
+
+    Signal 2 (elapsed-time correlation) only runs when both event_time_col
+    and record_time_col are given -- without them, every finding is marked
+    reduced_confidence, weaker evidence from only the name and
+    predictiveness signals. Never silently drops to the weaker check
+    without saying so; that's what reduced_confidence is for.
+
+    A feature only becomes a finding at all if at least one signal fires
+    (see combine_temporal_signals) -- most columns in a normal dataset
+    won't be flagged, and that's the expected, quiet outcome.
+    """
+    reduced_confidence = event_time_col is None or record_time_col is None
+    target = df[target_col]
+
+    excluded_cols = {target_col, event_time_col, record_time_col}
+    findings = []
+
+    for col in df.columns:
+        if col in excluded_cols or not pd.api.types.is_numeric_dtype(df[col]):
+            continue
+
+        name_matched = detect_aggregation_name_signal(col)
+
+        elapsed_corr = None
+        if not reduced_confidence:
+            elapsed_corr = compute_elapsed_time_correlation(df[col], df[record_time_col], df[event_time_col])
+
+        predictiveness = compute_predictiveness_signal(df[col], target)
+
+        severity = combine_temporal_signals(name_matched, elapsed_corr, predictiveness)
+        if severity is None:
+            continue
+
+        findings.append(TemporalLeakageFinding(
+            feature=col,
+            name_signal_matched=name_matched,
+            elapsed_time_correlation=elapsed_corr,
+            predictiveness_score=predictiveness.score if predictiveness else None,
+            predictiveness_metric=predictiveness.metric if predictiveness else None,
+            severity=severity,
+            reduced_confidence=reduced_confidence,
+        ))
+
+    return rank_temporal_findings(findings)
