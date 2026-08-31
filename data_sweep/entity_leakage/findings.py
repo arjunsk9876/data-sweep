@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from data_sweep.entity_leakage.keys import CandidateKey
 
@@ -60,3 +60,39 @@ def from_candidate_keys(candidates: List[CandidateKey]) -> List[EntityLeakageFin
         )
         for c in candidates
     ]
+
+
+@dataclass
+class TemporalLeakageFinding:
+    """One temporal-leakage finding: a feature that looks like it may have
+    been computed using data from after the label event.
+
+    Heuristic, not proof -- always "suspicious, worth investigating," never
+    a guarantee (see the temporal-leakage PRD's honesty framing). Bundles
+    all three raw signals so report.py can explain exactly why a feature
+    was flagged, not just assert that it was:
+
+    - name_signal_matched: does the column name look aggregation-style
+      (total_, avg_, cumulative_, etc)? Weighting only, never a gate.
+    - elapsed_time_correlation: correlation between the feature and how
+      much time elapsed past the label event. None when --event-time /
+      --record-time weren't both provided, or when it couldn't be
+      meaningfully computed -- not the same as "checked and found none".
+    - predictiveness_score / predictiveness_metric: how predictive the
+      feature is of the target on its own ("auc" or "r2"). None when it
+      couldn't be meaningfully computed.
+
+    reduced_confidence is True whenever elapsed_time_correlation is
+    unavailable because the timestamp columns weren't given at all (as
+    opposed to being given but not computable) -- report.py uses it to
+    label the finding "POSSIBLE" instead of "POTENTIAL" per the PRD, so a
+    weaker-evidence finding is never presented with the same confidence as
+    a full one.
+    """
+    feature: str
+    name_signal_matched: bool
+    elapsed_time_correlation: Optional[float]
+    predictiveness_score: Optional[float]
+    predictiveness_metric: Optional[str]  # "auc" or "r2", or None if unavailable
+    severity: str  # "HIGH" / "MEDIUM" / "LOW"
+    reduced_confidence: bool

@@ -1,4 +1,4 @@
-from data_sweep.entity_leakage.findings import EntityLeakageFinding, from_candidate_keys
+from data_sweep.entity_leakage.findings import EntityLeakageFinding, TemporalLeakageFinding, from_candidate_keys
 from data_sweep.entity_leakage.keys import CandidateKey
 
 
@@ -74,3 +74,46 @@ def test_from_candidate_keys_severity_boundaries():
 
 def test_from_candidate_keys_empty_list():
     assert from_candidate_keys([]) == []
+
+
+def _temporal_finding(**overrides):
+    defaults = dict(
+        feature="total_purchases",
+        name_signal_matched=True,
+        elapsed_time_correlation=0.81,
+        predictiveness_score=0.93,
+        predictiveness_metric="auc",
+        severity="HIGH",
+        reduced_confidence=False,
+    )
+    defaults.update(overrides)
+    return TemporalLeakageFinding(**defaults)
+
+
+def test_temporal_finding_construction_holds_all_fields():
+    f = _temporal_finding()
+    assert f.feature == "total_purchases"
+    assert f.name_signal_matched is True
+    assert f.elapsed_time_correlation == 0.81
+    assert f.predictiveness_score == 0.93
+    assert f.predictiveness_metric == "auc"
+    assert f.severity == "HIGH"
+    assert f.reduced_confidence is False
+
+
+def test_temporal_finding_equality_by_value():
+    assert _temporal_finding() == _temporal_finding()
+    assert _temporal_finding(feature="other") != _temporal_finding()
+
+
+def test_temporal_finding_allows_none_for_unavailable_signals():
+    f = _temporal_finding(
+        elapsed_time_correlation=None,
+        predictiveness_score=None,
+        predictiveness_metric=None,
+        reduced_confidence=True,
+    )
+    assert f.elapsed_time_correlation is None
+    assert f.predictiveness_score is None
+    assert f.predictiveness_metric is None
+    assert f.reduced_confidence is True
