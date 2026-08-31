@@ -1,7 +1,13 @@
 import pandas as pd
 import pytest
 
-from data_sweep.entity_leakage.temporal import compute_elapsed_time_correlation, detect_aggregation_name_signal
+from data_sweep.entity_leakage.baseline import PredictivenessResult
+from data_sweep.entity_leakage.temporal import (
+    compute_elapsed_time_correlation,
+    compute_predictiveness_signal,
+    detect_aggregation_name_signal,
+    is_unusually_predictive,
+)
 from tests.synthetic import make_temporal_leak_dataset
 
 
@@ -137,3 +143,32 @@ def test_missing_values_are_dropped_before_correlating():
     feature = pd.Series(list(range(25)) + [None] * 5, dtype=float)
     corr = compute_elapsed_time_correlation(feature, record_time, event_time)
     assert corr is not None  # shouldn't crash or return None just because some rows are missing
+
+
+def test_leaked_feature_scores_unusually_predictive():
+    df = make_temporal_leak_dataset(seed=0)
+    result = compute_predictiveness_signal(df["total_purchases"], df["target"])
+    assert result is not None
+    assert is_unusually_predictive(result) is True
+
+
+def test_clean_feature_does_not_score_unusually_predictive():
+    df = make_temporal_leak_dataset(seed=0)
+    result = compute_predictiveness_signal(df["total_purchases_windowed"], df["target"])
+    assert result is not None
+    assert is_unusually_predictive(result) is False
+
+
+def test_is_unusually_predictive_boundary():
+    assert is_unusually_predictive(PredictivenessResult(score=0.8, metric="auc")) is True
+    assert is_unusually_predictive(PredictivenessResult(score=0.799999, metric="auc")) is False
+
+
+def test_is_unusually_predictive_respects_custom_threshold():
+    result = PredictivenessResult(score=0.6, metric="auc")
+    assert is_unusually_predictive(result, threshold=0.5) is True
+    assert is_unusually_predictive(result, threshold=0.7) is False
+
+
+def test_is_unusually_predictive_none_is_never_suspicious():
+    assert is_unusually_predictive(None) is False

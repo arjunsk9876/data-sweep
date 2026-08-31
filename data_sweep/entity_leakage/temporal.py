@@ -3,12 +3,21 @@ from typing import List, Optional
 
 import pandas as pd
 
+from data_sweep.entity_leakage.baseline import PredictivenessResult, compute_predictiveness
+
 DEFAULT_AGGREGATION_KEYWORDS = [
     "total", "avg", "cumulative", "running", "lifetime", "ytd",
     "sum", "mean", "count", "last", "max", "min",
 ]
 
 MIN_ROWS_FOR_ELAPSED_CORRELATION = 10
+
+# Genuinely well-behaved historical aggregates are rarely this predictive on
+# their own -- an absolute bar, not a comparison against sibling columns
+# (PRD frames Signal 3 as relative to "other raw features of a similar
+# type", but a fixed threshold is simpler, deterministic, and captures the
+# same spirit: a lone feature scoring this high is inherently unusual).
+PREDICTIVENESS_HIGH_THRESHOLD = 0.8
 
 _TOKEN_SPLIT_RE = re.compile(r"[^a-zA-Z0-9]+")
 
@@ -78,3 +87,27 @@ def compute_elapsed_time_correlation(
         return None
 
     return float(corr)
+
+
+def compute_predictiveness_signal(feature: pd.Series, target: pd.Series) -> Optional[PredictivenessResult]:
+    """Signal 3: how predictive is this feature of the target, on its own?
+
+    Thin wrapper around baseline.compute_predictiveness() -- the actual
+    scoring logic is generic (reused later for basic feature-target
+    leakage too, per the roadmap), this just names it as the temporal-
+    leakage entry point so callers here don't need to know the shared
+    helper lives in a different module.
+    """
+    return compute_predictiveness(feature, target)
+
+
+def is_unusually_predictive(
+    result: Optional[PredictivenessResult], threshold: float = PREDICTIVENESS_HIGH_THRESHOLD
+) -> bool:
+    """Does this predictiveness score clear the bar for "suspiciously high
+    for a single feature"? None (score unavailable) is never suspicious --
+    absence of evidence isn't evidence of a leak.
+    """
+    if result is None:
+        return False
+    return result.score >= threshold
