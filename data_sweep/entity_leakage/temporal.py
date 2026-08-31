@@ -19,6 +19,10 @@ MIN_ROWS_FOR_ELAPSED_CORRELATION = 10
 # same spirit: a lone feature scoring this high is inherently unusual).
 PREDICTIVENESS_HIGH_THRESHOLD = 0.8
 
+# A correlation weaker than this could easily be noise -- only a
+# meaningfully positive relationship counts as Signal 2 "firing".
+ELAPSED_CORRELATION_STRONG_THRESHOLD = 0.3
+
 _TOKEN_SPLIT_RE = re.compile(r"[^a-zA-Z0-9]+")
 
 
@@ -111,3 +115,45 @@ def is_unusually_predictive(
     if result is None:
         return False
     return result.score >= threshold
+
+
+def combine_temporal_signals(
+    name_signal_matched: bool,
+    elapsed_time_correlation: Optional[float],
+    predictiveness: Optional[PredictivenessResult],
+) -> Optional[str]:
+    """Combine the three signals into an overall severity, or None if
+    nothing about this feature is actually suspicious.
+
+    None of the three signals alone is conclusive (a name match is
+    extremely common on legitimate aggregates; a correlation or
+    predictiveness score can't be computed at all without the right
+    inputs), so severity is driven by how many independently fire:
+
+    - 0 fired: not a finding at all -- nothing here is worth flagging
+    - 1 fired: LOW
+    - 2 fired: MEDIUM -- per the PRD, "two or more firing together is a
+      strong flag"
+    - 3 fired: HIGH
+
+    A signal that couldn't be computed (elapsed_time_correlation or
+    predictiveness is None) simply doesn't count toward the total --
+    "unavailable" is never treated as "fired", regardless of whether
+    that's because the right columns weren't provided or because it
+    genuinely couldn't be computed from what was given.
+    """
+    fired_count = 0
+    if name_signal_matched:
+        fired_count += 1
+    if elapsed_time_correlation is not None and elapsed_time_correlation > ELAPSED_CORRELATION_STRONG_THRESHOLD:
+        fired_count += 1
+    if is_unusually_predictive(predictiveness):
+        fired_count += 1
+
+    if fired_count == 0:
+        return None
+    if fired_count == 1:
+        return "LOW"
+    if fired_count == 2:
+        return "MEDIUM"
+    return "HIGH"

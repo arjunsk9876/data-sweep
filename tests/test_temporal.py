@@ -3,12 +3,16 @@ import pytest
 
 from data_sweep.entity_leakage.baseline import PredictivenessResult
 from data_sweep.entity_leakage.temporal import (
+    combine_temporal_signals,
     compute_elapsed_time_correlation,
     compute_predictiveness_signal,
     detect_aggregation_name_signal,
     is_unusually_predictive,
 )
 from tests.synthetic import make_temporal_leak_dataset
+
+_HIGH_PREDICTIVENESS = PredictivenessResult(score=0.9, metric="auc")
+_LOW_PREDICTIVENESS = PredictivenessResult(score=0.55, metric="auc")
 
 
 def test_total_prefix_matches():
@@ -172,3 +176,51 @@ def test_is_unusually_predictive_respects_custom_threshold():
 
 def test_is_unusually_predictive_none_is_never_suspicious():
     assert is_unusually_predictive(None) is False
+
+
+def test_combine_signals_none_fired_gives_no_finding():
+    assert combine_temporal_signals(False, None, None) is None
+    assert combine_temporal_signals(False, 0.1, _LOW_PREDICTIVENESS) is None
+
+
+def test_combine_signals_one_fired_gives_low():
+    assert combine_temporal_signals(True, None, None) == "LOW"
+    assert combine_temporal_signals(False, 0.5, None) == "LOW"
+    assert combine_temporal_signals(False, None, _HIGH_PREDICTIVENESS) == "LOW"
+
+
+def test_combine_signals_two_fired_gives_medium():
+    assert combine_temporal_signals(True, 0.5, None) == "MEDIUM"
+    assert combine_temporal_signals(True, None, _HIGH_PREDICTIVENESS) == "MEDIUM"
+    assert combine_temporal_signals(False, 0.5, _HIGH_PREDICTIVENESS) == "MEDIUM"
+
+
+def test_combine_signals_three_fired_gives_high():
+    assert combine_temporal_signals(True, 0.5, _HIGH_PREDICTIVENESS) == "HIGH"
+
+
+def test_combine_signals_weak_correlation_does_not_count_as_fired():
+    # below ELAPSED_CORRELATION_STRONG_THRESHOLD -- shouldn't push a single
+    # name match up to two signals fired
+    assert combine_temporal_signals(True, 0.1, None) == "LOW"
+
+
+def test_combine_signals_low_predictiveness_does_not_count_as_fired():
+    assert combine_temporal_signals(True, None, _LOW_PREDICTIVENESS) == "LOW"
+
+
+def test_combine_signals_matches_synthetic_leaked_and_clean_features():
+    df = make_temporal_leak_dataset(seed=0)
+
+    leaked_name = detect_aggregation_name_signal("total_purchases")
+    leaked_corr = compute_elapsed_time_correlation(df["total_purchases"], df["snapshot_date"], df["cancel_date"])
+    leaked_pred = compute_predictiveness_signal(df["total_purchases"], df["target"])
+    assert combine_temporal_signals(leaked_name, leaked_corr, leaked_pred) == "HIGH"
+
+    clean_name = detect_aggregation_name_signal("total_purchases_windowed")
+    clean_corr = compute_elapsed_time_correlation(df["total_purchases_windowed"], df["snapshot_date"], df["cancel_date"])
+    clean_pred = compute_predictiveness_signal(df["total_purchases_windowed"], df["target"])
+    # the name still matches (naming alone doesn't discriminate), but
+    # neither of the other two signals should fire on a clean feature
+    assert clean_name is True
+    assert combine_temporal_signals(clean_name, clean_corr, clean_pred) == "LOW"
