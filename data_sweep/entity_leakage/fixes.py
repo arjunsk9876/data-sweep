@@ -31,6 +31,27 @@ class NoFindingsError(Exception):
     """Raised when fix-code generation is asked to run on an empty findings list."""
 
 
+class SklearnMissingError(Exception):
+    """Raised when fix generation is requested but scikit-learn isn't installed.
+
+    scikit-learn is not a core dependency of data-sweep -- the generated fix
+    code needs it to run, but auditing (and even generating the fix text
+    itself) doesn't. This is a deliberate, explicit check rather than
+    letting a bare `import sklearn` fail somewhere: it gives the user a
+    clear next step instead of a raw ImportError, and it fires before any
+    code is printed or written, not after.
+    """
+
+
+def check_sklearn_available() -> None:
+    try:
+        import sklearn  # noqa: F401
+    except ImportError:
+        raise SklearnMissingError(
+            "Fix generation requires scikit-learn -- pip install scikit-learn"
+        ) from None
+
+
 def _select_primary(findings: List[EntityLeakageFinding]) -> EntityLeakageFinding:
     # highest severity wins; ties broken by overlap_pct (two_file) or
     # uniqueness_ratio (single_file, where overlap_pct is always 0.0)
@@ -61,6 +82,8 @@ def generate_fix_code(findings: List[EntityLeakageFinding]) -> str:
     """
     if not findings:
         raise NoFindingsError("no findings to generate a fix for")
+
+    check_sklearn_available()
 
     primary = _select_primary(findings)
     template = TWO_FILE_TEMPLATE if primary.mode == "two_file" else SINGLE_FILE_TEMPLATE

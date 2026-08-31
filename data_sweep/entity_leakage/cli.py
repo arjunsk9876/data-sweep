@@ -5,7 +5,7 @@ from typing import List, Optional
 import pandas as pd
 
 from data_sweep.entity_leakage.findings import EntityLeakageFinding, from_candidate_keys
-from data_sweep.entity_leakage.fixes import generate_fix_code
+from data_sweep.entity_leakage.fixes import SklearnMissingError, generate_fix_code
 from data_sweep.entity_leakage.io import DatasetLoadError, load_datasets
 from data_sweep.entity_leakage.keys import score_candidate_keys
 from data_sweep.entity_leakage.leakage import check_cross_split_leakage, to_entity_leakage_findings
@@ -73,7 +73,11 @@ def run_audit(args: argparse.Namespace) -> None:
         print("\nNothing to fix -- no entity/group key finding to generate a fix for.")
         return
 
-    code = generate_fix_code(entity_findings)
+    try:
+        code = generate_fix_code(entity_findings)
+    except SklearnMissingError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if args.fix:
         print("\n" + code)

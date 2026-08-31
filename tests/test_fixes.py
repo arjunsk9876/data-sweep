@@ -1,7 +1,14 @@
+import sys
+
 import pytest
 
 from data_sweep.entity_leakage.findings import EntityLeakageFinding
-from data_sweep.entity_leakage.fixes import NoFindingsError, generate_fix_code
+from data_sweep.entity_leakage.fixes import (
+    NoFindingsError,
+    SklearnMissingError,
+    check_sklearn_available,
+    generate_fix_code,
+)
 
 
 def _finding(candidate_key="entity_id", uniqueness_ratio=0.2, overlap_pct=20.0, severity="high", mode="two_file", example_values=None):
@@ -84,3 +91,26 @@ def test_multiple_alternates_all_noted():
 def test_generated_code_is_syntactically_valid():
     code = generate_fix_code([_finding()])
     compile(code, "<generated-fix>", "exec")
+
+
+def test_check_sklearn_available_does_not_raise_when_installed():
+    check_sklearn_available()  # scikit-learn is a dev dependency -- should be importable here
+
+
+def test_check_sklearn_available_raises_clean_error_when_missing(monkeypatch):
+    monkeypatch.setitem(sys.modules, "sklearn", None)
+    with pytest.raises(SklearnMissingError, match="pip install scikit-learn"):
+        check_sklearn_available()
+
+
+def test_generate_fix_code_raises_when_sklearn_missing(monkeypatch):
+    monkeypatch.setitem(sys.modules, "sklearn", None)
+    with pytest.raises(SklearnMissingError):
+        generate_fix_code([_finding()])
+
+
+def test_generate_fix_code_checks_sklearn_after_empty_findings_check():
+    # empty findings should raise NoFindingsError regardless of sklearn
+    # availability -- there's nothing to generate a fix for either way
+    with pytest.raises(NoFindingsError):
+        generate_fix_code([])

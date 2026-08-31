@@ -192,6 +192,21 @@ def test_run_audit_no_fix_flag_does_not_print_fix_code(tmp_path, capsys):
     assert "GroupShuffleSplit" not in out
 
 
+def test_run_audit_fix_sklearn_missing_exits_cleanly(tmp_path, capsys, monkeypatch):
+    monkeypatch.setitem(sys.modules, "sklearn", None)
+    train_df, test_df = make_leaky_split(overlap_entities=20, seed=0)
+    train_path = _write_csv(train_df, tmp_path / "train.csv")
+    test_path = _write_csv(test_df, tmp_path / "test.csv")
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True, fix_file=None))
+
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err
+    assert "pip install scikit-learn" in err
+
+
 def test_run_audit_fix_file_writes_fix_code(tmp_path, capsys):
     train_df, test_df = make_leaky_split(overlap_entities=20, seed=0)
     train_path = _write_csv(train_df, tmp_path / "train.csv")
