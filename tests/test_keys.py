@@ -94,8 +94,9 @@ def test_just_outside_boundary_excluded():
     df_low = pd.DataFrame({"a": [f"v{i % 9}" for i in range(500)]})  # 9/500 = 0.018
     assert score_candidate_keys(df_low) == []
 
-    # ratio just above 0.95
-    df_high = pd.DataFrame({"a": [f"v{i}" for i in range(96)] + [f"v0" for _ in range(4)]})  # 96/100 = 0.96
+    # ratio just above 0.95, on a dataset large enough that small-dataset
+    # ceiling widening doesn't apply (that's covered separately below)
+    df_high = pd.DataFrame({"a": [f"v{i}" for i in range(480)] + [f"v{i}" for i in range(20)]})  # 480/500 = 0.96
     assert score_candidate_keys(df_high) == []
 
 
@@ -150,6 +151,40 @@ def test_synthetic_disjoint_split_entity_col_still_a_candidate():
     train_df, test_df = make_disjoint_split(seed=0)
     assert "entity_id" in {c.column for c in score_candidate_keys(train_df)}
     assert "entity_id" in {c.column for c in score_candidate_keys(test_df)}
+
+
+def test_small_dataset_widens_ceiling_above_default_max():
+    # 199 rows, 197 unique values -> ratio ~0.99, above the default 0.95
+    # ceiling but should still qualify since n_rows is under the threshold
+    df = pd.DataFrame({"a": [f"v{i}" for i in range(197)] + ["v0", "v1"]})
+    ratio = df["a"].nunique() / len(df)
+    assert 0.95 < ratio < 0.99
+    candidates = score_candidate_keys(df)
+    assert [c.column for c in candidates] == ["a"]
+    assert candidates[0].uniqueness_ratio == ratio
+
+
+def test_small_dataset_ceiling_still_excludes_true_row_ids():
+    # every value unique -> ratio 1.0, still excluded even under the
+    # widened small-dataset ceiling
+    df = pd.DataFrame({"a": [f"v{i}" for i in range(150)]})
+    assert score_candidate_keys(df) == []
+
+
+def test_large_dataset_keeps_default_ceiling():
+    # 250 rows (over the small-dataset threshold), ratio 0.97 -> excluded
+    # under the normal 0.95 ceiling since widening shouldn't apply here
+    df = pd.DataFrame({"a": [f"v{i}" for i in range(242)] + [f"v{i}" for i in range(8)]})
+    ratio = df["a"].nunique() / len(df)
+    assert 0.95 < ratio < 0.99
+    assert score_candidate_keys(df) == []
+
+
+def test_explicit_max_uniqueness_ratio_overrides_small_dataset_widening():
+    # caller-supplied max_uniqueness_ratio should be respected exactly,
+    # even on a small dataset, rather than silently widened
+    df = pd.DataFrame({"a": [f"v{i}" for i in range(197)] + ["v0", "v1"]})
+    assert score_candidate_keys(df, max_uniqueness_ratio=0.95) == []
 
 
 def test_synthetic_leaky_split_feature_columns_not_flagged():
