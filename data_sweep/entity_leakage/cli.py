@@ -15,8 +15,9 @@ from data_sweep.entity_leakage.temporal import check_temporal_leakage
 
 def add_audit_subparser(parser: argparse.ArgumentParser) -> None:
     parser.description = (
-        "Detect hidden entity/group leakage between a train and test split -- no "
-        "need to say which column is the entity key, it's inferred automatically."
+        "Detect hidden entity/group leakage between a train and test split, and computed "
+        "features that may be using data from after the label event -- no need to say which "
+        "column is the entity key, it's inferred automatically."
     )
     parser.epilog = (
         "examples:\n"
@@ -24,6 +25,8 @@ def add_audit_subparser(parser: argparse.ArgumentParser) -> None:
         "  data-sweep audit train.csv                                list candidate entity/group key columns only\n"
         "  data-sweep audit train.csv --test test.csv --fix         also print a runnable fix for the leak found\n"
         "  data-sweep audit train.csv --test test.csv --fix-file fix.py   write the fix to a file instead\n"
+        "  data-sweep audit train.csv --target churn --event-time cancel_date --record-time snapshot_date\n"
+        "                                                             check computed features for temporal leakage\n"
     )
     parser.formatter_class = argparse.RawDescriptionHelpFormatter
     parser.add_argument("input_csv", help="Path to the training/primary CSV file.")

@@ -123,6 +123,28 @@ def test_audit_help_runs_cleanly():
     assert "Traceback" not in result.stdout and "Traceback" not in result.stderr
 
 
+def test_audit_help_mentions_temporal_leakage_flags():
+    result = subprocess.run(
+        [sys.executable, "run.py", "audit", "--help"],
+        cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert "--target" in result.stdout
+    assert "--event-time" in result.stdout
+    assert "--record-time" in result.stdout
+    assert "temporal" in result.stdout.lower()
+    assert "--event-time cancel_date --record-time snapshot_date" in result.stdout
+
+
+def test_top_level_help_mentions_temporal_leakage():
+    result = subprocess.run(
+        [sys.executable, "run.py", "--help"],
+        cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert "temporal" in result.stdout.lower()
+
+
 def test_audit_missing_file_via_console_exits_cleanly_no_traceback():
     result = subprocess.run(
         [sys.executable, "run.py", "audit", "does_not_exist.csv"],

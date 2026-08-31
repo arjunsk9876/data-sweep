@@ -64,13 +64,14 @@ def run_clean(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="data-sweep",
-        description="Scan a CSV, fix common data quality issues, audit for hidden entity leakage "
-                     "with runnable fixes, and explain what changed.",
+        description="Scan a CSV, fix common data quality issues, audit for hidden entity and "
+                     "temporal leakage with runnable fixes, and explain what changed.",
         epilog="examples:\n"
                "  data-sweep clean data.csv\n"
                "  data-sweep audit train.csv --test test.csv\n"
                "  data-sweep audit train.csv\n"
                "  data-sweep audit train.csv --test test.csv --fix\n"
+               "  data-sweep audit train.csv --target churn --event-time cancel_date --record-time snapshot_date\n"
                "\n"
                "Run `data-sweep <command> --help` for command-specific options.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
