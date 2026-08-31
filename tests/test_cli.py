@@ -1,0 +1,87 @@
+import argparse
+
+import pandas as pd
+import pytest
+
+from data_sweep.entity_leakage.cli import add_audit_subparser, run_audit
+from tests.synthetic import make_disjoint_split, make_leaky_split
+
+
+def _write_csv(df: pd.DataFrame, path) -> str:
+    df.to_csv(path, index=False)
+    return str(path)
+
+
+def test_add_audit_subparser_wires_expected_args():
+    parser = argparse.ArgumentParser()
+    add_audit_subparser(parser)
+    args = parser.parse_args(["train.csv", "--test", "test.csv"])
+    assert args.input_csv == "train.csv"
+    assert args.test_csv == "test.csv"
+
+
+def test_add_audit_subparser_test_csv_optional():
+    parser = argparse.ArgumentParser()
+    add_audit_subparser(parser)
+    args = parser.parse_args(["train.csv"])
+    assert args.input_csv == "train.csv"
+    assert args.test_csv is None
+
+
+def test_run_audit_single_file_mode_reports_candidates(tmp_path, capsys):
+    train_df, _ = make_leaky_split(seed=0)
+    train_path = _write_csv(train_df, tmp_path / "train.csv")
+
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=None))
+
+    out = capsys.readouterr().out
+    assert "entity_id" in out
+    assert "informational only" in out
+
+
+def test_run_audit_two_file_mode_reports_leakage(tmp_path, capsys):
+    train_df, test_df = make_leaky_split(overlap_entities=20, seed=0)
+    train_path = _write_csv(train_df, tmp_path / "train.csv")
+    test_path = _write_csv(test_df, tmp_path / "test.csv")
+
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path))
+
+    out = capsys.readouterr().out
+    assert "entity_id" in out
+    assert "Found 1 possible leak" in out
+
+
+def test_run_audit_two_file_mode_no_leakage(tmp_path, capsys):
+    train_df, test_df = make_disjoint_split(seed=0)
+    train_path = _write_csv(train_df, tmp_path / "train.csv")
+    test_path = _write_csv(test_df, tmp_path / "test.csv")
+
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path))
+
+    out = capsys.readouterr().out
+    assert "No entity/group leakage detected" in out
+
+
+def test_run_audit_missing_train_file_exits_cleanly(tmp_path, capsys):
+    missing_path = str(tmp_path / "does_not_exist.csv")
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_audit(argparse.Namespace(input_csv=missing_path, test_csv=None))
+
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err
+    assert "does_not_exist.csv" in err
+
+
+def test_run_audit_missing_test_file_exits_cleanly(tmp_path, capsys):
+    train_df, _ = make_leaky_split(seed=0)
+    train_path = _write_csv(train_df, tmp_path / "train.csv")
+    missing_path = str(tmp_path / "does_not_exist.csv")
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_audit(argparse.Namespace(input_csv=train_path, test_csv=missing_path))
+
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err
