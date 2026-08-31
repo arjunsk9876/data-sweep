@@ -3,9 +3,17 @@ from typing import List
 
 import pandas as pd
 
+from data_sweep.entity_leakage.findings import EntityLeakageFinding
 from data_sweep.entity_leakage.keys import CandidateKey, score_candidate_keys
 
 DEFAULT_OVERLAP_THRESHOLD = 0.02  # >2% overlap on a supposedly disjoint split is suspicious
+
+# Severity buckets for fix-code generation (which candidate key to fix first
+# when several are flagged) and for the plain-language "high/medium/low"
+# label. These are independent of DEFAULT_OVERLAP_THRESHOLD, which only
+# decides whether something is a finding at all.
+HIGH_OVERLAP_RATIO = 0.20
+MEDIUM_OVERLAP_RATIO = 0.05
 
 
 @dataclass
@@ -70,3 +78,32 @@ def rank_by_severity(findings: List[LeakageFinding]) -> List[LeakageFinding]:
     underlying candidate-key evidence was.
     """
     return sorted(findings, key=_severity_key, reverse=True)
+
+
+def _severity_label(overlap_ratio: float) -> str:
+    if overlap_ratio >= HIGH_OVERLAP_RATIO:
+        return "high"
+    if overlap_ratio >= MEDIUM_OVERLAP_RATIO:
+        return "medium"
+    return "low"
+
+
+def to_entity_leakage_findings(findings: List[LeakageFinding]) -> List[EntityLeakageFinding]:
+    """Flatten LeakageFinding objects into the mode-aware EntityLeakageFinding
+    shape that fix-code generation (and any other downstream consumer) uses.
+
+    Pure reshaping -- doesn't change which columns get flagged or how
+    they're ranked, so check_cross_split_leakage()'s own tests still cover
+    the actual detection logic untouched.
+    """
+    return [
+        EntityLeakageFinding(
+            candidate_key=f.column,
+            uniqueness_ratio=f.candidate_key.uniqueness_ratio,
+            overlap_pct=f.overlap_ratio * 100,
+            severity=_severity_label(f.overlap_ratio),
+            mode="two_file",
+            example_values=list(f.example_overlapping_values),
+        )
+        for f in findings
+    ]

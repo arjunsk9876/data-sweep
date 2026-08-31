@@ -1,7 +1,13 @@
 import pandas as pd
+import pytest
 
 from data_sweep.entity_leakage.keys import CandidateKey
-from data_sweep.entity_leakage.leakage import LeakageFinding, check_cross_split_leakage, rank_by_severity
+from data_sweep.entity_leakage.leakage import (
+    LeakageFinding,
+    check_cross_split_leakage,
+    rank_by_severity,
+    to_entity_leakage_findings,
+)
 from tests.synthetic import make_disjoint_split, make_leaky_split, make_no_entity_structure
 
 
@@ -107,6 +113,37 @@ def test_severity_tiebreak_uses_overlap_count():
     ]
     ranked = rank_by_severity(findings)
     assert [f.column for f in ranked] == ["col_a", "col_b"]
+
+
+def test_to_entity_leakage_findings_maps_fields():
+    train_df, test_df = make_leaky_split(overlap_entities=20, seed=0)
+    findings = check_cross_split_leakage(train_df, test_df)
+    entity_findings = to_entity_leakage_findings(findings)
+
+    assert len(entity_findings) == len(findings)
+    f, ef = findings[0], entity_findings[0]
+    assert ef.candidate_key == f.column
+    assert ef.uniqueness_ratio == f.candidate_key.uniqueness_ratio
+    assert ef.overlap_pct == pytest.approx(f.overlap_ratio * 100)
+    assert ef.mode == "two_file"
+    assert ef.example_values == f.example_overlapping_values
+
+
+def test_to_entity_leakage_findings_severity_boundaries():
+    high = _fake_finding("a", overlap_ratio=0.20, overlap_count=1, test_entity_count=1, score=1.0)
+    just_below_high = _fake_finding("b", overlap_ratio=0.199, overlap_count=1, test_entity_count=1, score=1.0)
+    medium = _fake_finding("c", overlap_ratio=0.05, overlap_count=1, test_entity_count=1, score=1.0)
+    just_below_medium = _fake_finding("d", overlap_ratio=0.049, overlap_count=1, test_entity_count=1, score=1.0)
+
+    mapped = {ef.candidate_key: ef.severity for ef in to_entity_leakage_findings([high, just_below_high, medium, just_below_medium])}
+    assert mapped["a"] == "high"
+    assert mapped["b"] == "medium"
+    assert mapped["c"] == "medium"
+    assert mapped["d"] == "low"
+
+
+def test_to_entity_leakage_findings_empty_list():
+    assert to_entity_leakage_findings([]) == []
 
 
 def _fake_finding(column, overlap_ratio, overlap_count, test_entity_count, score):
