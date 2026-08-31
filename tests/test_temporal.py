@@ -150,6 +150,20 @@ def test_missing_values_are_dropped_before_correlating():
     assert corr is not None  # shouldn't crash or return None just because some rows are missing
 
 
+def test_unparseable_record_time_returns_none_not_raises():
+    record_time = pd.Series(["not a date", "also not a date"] * 15)
+    event_time = pd.to_datetime(["2023-01-01"] * 30)
+    feature = pd.Series(range(30), dtype=float)
+    assert compute_elapsed_time_correlation(feature, record_time, event_time) is None
+
+
+def test_unparseable_event_time_returns_none_not_raises():
+    record_time = pd.to_datetime(["2023-01-01"] * 30)
+    event_time = pd.Series(["garbage", "more garbage"] * 15)
+    feature = pd.Series(range(30), dtype=float)
+    assert compute_elapsed_time_correlation(feature, record_time, event_time) is None
+
+
 def test_leaked_feature_scores_unusually_predictive():
     df = make_temporal_leak_dataset(seed=0)
     result = compute_predictiveness_signal(df["total_purchases"], df["target"])

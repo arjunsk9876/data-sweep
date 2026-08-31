@@ -373,6 +373,23 @@ def test_run_audit_unknown_record_time_column_exits_cleanly(tmp_path, capsys):
     assert "does_not_exist" in err
 
 
+def test_run_audit_malformed_timestamp_column_does_not_crash(tmp_path, capsys):
+    # the column exists (so it passes the unknown-column check) but its
+    # values aren't parseable as dates -- must degrade gracefully, not
+    # raise a raw parsing exception
+    df = make_temporal_leak_dataset(seed=0)
+    df["snapshot_date"] = ["not a date"] * len(df)
+    train_path = _write_csv(df, tmp_path / "train.csv")
+
+    run_audit(_temporal_args(
+        train_path, target="target", event_time_col="cancel_date", record_time_col="snapshot_date",
+    ))
+
+    out = capsys.readouterr().out
+    assert "Traceback" not in out
+    assert "total_purchases" in out  # still flagged via name + predictiveness
+
+
 def test_run_audit_combines_entity_and_temporal_checks(tmp_path, capsys):
     # both --test and --target given -- both checks should run in one pass
     train_df, test_df = make_leaky_split(overlap_entities=20, seed=0)

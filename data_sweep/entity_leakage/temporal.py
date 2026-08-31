@@ -67,17 +67,25 @@ def compute_elapsed_time_correlation(
     positive correlation tells this particular story, and the caller
     decides what counts as "strong" when combining signals into severity.
 
-    Returns None when a correlation can't be meaningfully computed (too few
-    complete rows, or a constant feature/elapsed-time with nothing to
-    correlate) rather than fabricating a misleading number.
+    Returns None when a correlation can't be meaningfully computed -- too
+    few complete rows, a constant feature/elapsed-time with nothing to
+    correlate, or either timestamp column containing values that can't be
+    parsed as dates at all -- rather than fabricating a misleading number
+    or letting a raw parsing exception escape to the caller.
     """
     # normalize everything to a plain Series with a fresh positional index --
     # pd.to_datetime() on a list/array returns a DatetimeIndex, not a Series
     # (no .dt accessor), and mismatched original indices between the three
     # inputs could otherwise silently misalign rows during construction
     feature = pd.Series(feature).reset_index(drop=True)
-    record_time = pd.Series(pd.to_datetime(record_time)).reset_index(drop=True)
-    event_time = pd.Series(pd.to_datetime(event_time)).reset_index(drop=True)
+    try:
+        record_time = pd.Series(pd.to_datetime(record_time)).reset_index(drop=True)
+        event_time = pd.Series(pd.to_datetime(event_time)).reset_index(drop=True)
+    except (ValueError, TypeError):
+        # a column that isn't actually date-like (garbage strings, mixed
+        # types) can't give this signal anything to correlate -- same
+        # "unavailable" outcome as any other uncomputable case
+        return None
 
     elapsed = (event_time - record_time).dt.total_seconds() / 86400
     aligned = pd.DataFrame({"feature": feature, "elapsed": elapsed}).dropna()
