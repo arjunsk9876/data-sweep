@@ -241,11 +241,91 @@ If more than one column looks like an entity key, the highest-severity one gets 
 
 `--fix`/`--fix-file` need scikit-learn (`pip install scikit-learn`, or `pip install data-sweep[fix]`) — auditing itself never requires it, only generating a fix that calls into it does. Without it installed, `--fix` prints a plain error after the normal audit report instead of crashing.
 
+## Temporal leakage detection
+
+A second, independent check on `audit`: flags computed/aggregated features (things like `total_purchases`, `avg_order_value`, `lifetime_spend`) that may have been calculated using data from *after* the label event — so the model would be training on information it couldn't actually have had at prediction time.
+
+This one is fundamentally different from entity leakage above, and it's important to be upfront about that: entity leakage is something data-sweep can prove (it shows you the exact overlapping values), and re-running `audit` after the fix confirms the leak is gone. Temporal leakage isn't provable from a CSV alone — data-sweep doesn't know how each feature was actually computed. What it does is combine three heuristic signals (does the column name look like an aggregation? does its value correlate with elapsed time since the label event? is it suspiciously predictive of the target all on its own?) into a severity rating. Treat every finding as **worth investigating, not a confirmed bug** — there is no closed-loop proof here, and no `--fix` for this check, on purpose.
+
+Turn it on with `--target` (the label column). For the strongest version of the check, also pass `--event-time` (when the label event happened, e.g. a cancellation date) and `--record-time` (when the row/features were actually observed, e.g. a snapshot date) — together these let data-sweep compute the elapsed-time correlation signal:
+
+```bash
+data-sweep audit train.csv --target churn --event-time cancel_date --record-time snapshot_date
+```
+
+```
+Found 2 features with potential temporal leakage:
+
+POTENTIAL TEMPORAL LEAKAGE
+
+Feature: total_purchases
+
+Signals:
+- Name pattern matched (aggregation-style naming, e.g. total_/avg_/cumulative_)
+- Elapsed-time correlation: 0.53 (value grows with time since the event -- suspicious)
+- Predictiveness: single-feature AUC 0.82 (unusually high for one feature)
+
+Severity: HIGH
+
+Why this matters:
+This feature's value may include activity that happened after the label event -- information that wouldn't be available at real prediction time, which can make the feature look more useful than it actually will be. This is a heuristic flag based on naming, correlation, and predictiveness patterns, not proof of leakage -- worth investigating, not necessarily a bug.
+
+Recommendation:
+Recompute this feature using only data available before 'cancel_date', and verify the recomputed version doesn't correlate with elapsed time.
+
+POTENTIAL TEMPORAL LEAKAGE
+
+Feature: total_purchases_windowed
+
+Signals:
+- Name pattern matched (aggregation-style naming, e.g. total_/avg_/cumulative_)
+- Elapsed-time correlation: 0.02 (value grows with time since the event -- suspicious)
+- Predictiveness: single-feature AUC 0.60 (unusually high for one feature)
+
+Severity: LOW
+
+Why this matters:
+This feature's value may include activity that happened after the label event -- information that wouldn't be available at real prediction time, which can make the feature look more useful than it actually will be. This is a heuristic flag based on naming, correlation, and predictiveness patterns, not proof of leakage -- worth investigating, not necessarily a bug.
+
+Recommendation:
+Recompute this feature using only data available before 'cancel_date', and verify the recomputed version doesn't correlate with elapsed time.
+```
+
+Two features get flagged here on the same underlying data: `total_purchases` at HIGH severity (all three signals fired — suspicious name, a real positive correlation with elapsed time, and an unusually high standalone AUC), and `total_purchases_windowed` at LOW (only the name matched; its elapsed-time correlation and predictiveness are both unremarkable, so it's most likely just a feature that happens to be named like an aggregate).
+
+**Without timestamps**, drop `--event-time`/`--record-time` and only pass `--target`. The elapsed-time correlation signal can't be computed, so the check runs at reduced confidence — and the report says so explicitly, both in the header and by only showing the signals that were actually available:
+
+```bash
+data-sweep audit train.csv --target churn
+```
+
+```
+Found 2 features with potential temporal leakage:
+
+POSSIBLE TEMPORAL LEAKAGE (lower confidence -- no event/record timestamps provided)
+
+Feature: total_purchases
+
+Signals:
+- Name pattern matched (aggregation-style naming, e.g. total_/avg_/cumulative_)
+- Predictiveness: single-feature AUC 0.82 (unusually high for one feature)
+
+Severity: MEDIUM
+
+Why this matters:
+This feature's value may include activity that happened after the label event -- information that wouldn't be available at real prediction time, which can make the feature look more useful than it actually will be. This is a heuristic flag based on naming, correlation, and predictiveness patterns, not proof of leakage -- worth investigating, not necessarily a bug.
+
+Recommendation:
+Recompute this feature using only data available before the label event, and verify the recomputed version doesn't correlate with elapsed time.
+```
+
+Notice `total_purchases` drops from HIGH to MEDIUM here — same feature, same data, but with one fewer signal available to corroborate it, so the severity (honestly) reflects less certainty. This is deliberate: reduced-confidence output is never dressed up to look as authoritative as a full-confidence finding.
+
 ## Development
 
 **`clean`**: detection logic lives in `data_sweep/detectors/` — one module per concern (duplicates, constant, missing, outliers, mixed-type, categorical, leakage, imbalance, multicollinearity). `data_sweep/profile.py` is a thin orchestrator that calls each detector and reports what it finds; `data_sweep/clean.py` calls the same detector decision logic to actually apply the fix, so the two never drift apart.
 
-**`audit`**: lives in `data_sweep/entity_leakage/` — `io.py` loads the CSV(s) with clean error handling, `keys.py` scores every column as a candidate entity/group key (uniqueness ratio gates candidacy; ID-format and name-keyword signals only boost ranking among already-qualified candidates, never gate on their own), `leakage.py` checks candidate columns for cross-split value overlap and ranks findings worst-first, and `report.py` turns the results into the plain-language output shown above. `findings.py` defines `EntityLeakageFinding`, the mode-aware shape (`two_file` vs `single_file`) that both the plain-language report and fix generation build on. `fixes.py` renders a runnable fix (`GroupShuffleSplit` or `GroupKFold`, picked by mode) from those findings, with a clean error if scikit-learn isn't installed. `cli.py` wires it all together, including `--fix`/`--fix-file`. `tests/synthetic.py` generates train/test pairs with known, guaranteed ground truth (a real injected leak, a genuinely disjoint split, or no entity structure at all) so detection logic can be tested against cases with a known right answer, not just hand-picked examples; `tests/test_closed_loop.py` goes a step further and proves a generated fix actually resolves the leak it targets, by applying it and re-running the audit.
+**`audit`**: lives in `data_sweep/entity_leakage/` — `io.py` loads the CSV(s) with clean error handling, `keys.py` scores every column as a candidate entity/group key (uniqueness ratio gates candidacy; ID-format and name-keyword signals only boost ranking among already-qualified candidates, never gate on their own), `leakage.py` checks candidate columns for cross-split value overlap and ranks findings worst-first, and `report.py` turns the results into the plain-language output shown above. `findings.py` defines `EntityLeakageFinding`, the mode-aware shape (`two_file` vs `single_file`) that both the plain-language report and fix generation build on. `fixes.py` renders a runnable fix (`GroupShuffleSplit` or `GroupKFold`, picked by mode) from those findings, with a clean error if scikit-learn isn't installed. `baseline.py` computes single-feature predictiveness against a target (rank-based AUC for a binary target, R² for a continuous one) and is shared between the temporal check below and the entity-leakage code above. `temporal.py` implements the temporal-leakage check itself: name-pattern matching, elapsed-time correlation, and the predictiveness signal from `baseline.py`, combined into a severity. `cli.py` wires it all together, including `--fix`/`--fix-file` and `--target`/`--event-time`/`--record-time`. `tests/synthetic.py` generates train/test pairs with known, guaranteed ground truth (a real injected leak, a genuinely disjoint split, or no entity structure at all) so detection logic can be tested against cases with a known right answer, not just hand-picked examples; `tests/test_closed_loop.py` goes a step further and proves a generated fix actually resolves the leak it targets, by applying it and re-running the audit.
 
 Install with dev dependencies (pytest, mypy):
 
