@@ -1,5 +1,6 @@
 from typing import List
 
+from data_sweep.entity_leakage.keys import CandidateKey
 from data_sweep.entity_leakage.leakage import LeakageFinding
 
 
@@ -31,3 +32,32 @@ def format_audit_report(findings: List[LeakageFinding]) -> str:
     header = f"Found {count} possible leak{'s' if count != 1 else ''} between train and test:"
     body = "\n\n".join(format_finding(f) for f in findings)
     return f"{header}\n\n{body}"
+
+
+def format_single_file_report(candidates: List[CandidateKey]) -> str:
+    """Render an informational report for single-file mode (no --test given).
+
+    Without a second file there's nothing to check for cross-split
+    overlap, so this only surfaces which columns look like entity/group
+    keys -- useful on its own for understanding a dataset's structure,
+    and as a hint for what to pass to --test once a split exists.
+    """
+    if not candidates:
+        return (
+            "No candidate entity/group key columns detected in this file.\n"
+            "No --test file was provided, so this was informational only -- "
+            "no leakage check was run."
+        )
+
+    count = len(candidates)
+    lines = [f"Detected {count} candidate entity/group key column{'s' if count != 1 else ''}:"]
+    for c in candidates:
+        signals = ", ".join(c.signals)
+        lines.append(f"  '{c.column}' -- uniqueness ratio {c.uniqueness_ratio:.3f} (signals: {signals})")
+    lines.append("")
+    lines.append(
+        "No --test file was provided, so this was informational only -- no "
+        "leakage check was run. Pass --test <file> to check these columns "
+        "for overlap between train and test."
+    )
+    return "\n".join(lines)

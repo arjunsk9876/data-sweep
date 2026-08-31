@@ -1,6 +1,6 @@
 from data_sweep.entity_leakage.keys import CandidateKey
 from data_sweep.entity_leakage.leakage import LeakageFinding
-from data_sweep.entity_leakage.report import format_audit_report, format_finding
+from data_sweep.entity_leakage.report import format_audit_report, format_finding, format_single_file_report
 
 
 def _finding(column="entity_id", overlap_ratio=0.2, overlap_count=20, test_entity_count=100, examples=None):
@@ -66,6 +66,53 @@ def test_format_audit_report_plural_leaks():
 def test_format_audit_report_includes_every_finding():
     findings = [_finding(column="a"), _finding(column="b"), _finding(column="c")]
     text = format_audit_report(findings)
+    assert "'a'" in text
+    assert "'b'" in text
+    assert "'c'" in text
+
+
+def _candidate(column="entity_id", uniqueness_ratio=0.2, score=1.0, signals=None):
+    return CandidateKey(
+        column=column,
+        uniqueness_ratio=uniqueness_ratio,
+        score=score,
+        signals=signals if signals is not None else ["uniqueness"],
+    )
+
+
+def test_format_single_file_report_no_candidates():
+    text = format_single_file_report([])
+    assert "No candidate entity/group key columns detected" in text
+    assert "informational only" in text
+
+
+def test_format_single_file_report_lists_column_and_ratio():
+    text = format_single_file_report([_candidate(column="customer_id", uniqueness_ratio=0.234)])
+    assert "customer_id" in text
+    assert "0.234" in text
+
+
+def test_format_single_file_report_lists_signals():
+    text = format_single_file_report([_candidate(signals=["uniqueness", "format", "name"])])
+    assert "uniqueness, format, name" in text
+
+
+def test_format_single_file_report_singular_plural_count():
+    text_one = format_single_file_report([_candidate(column="a")])
+    assert "Detected 1 candidate entity/group key column:" in text_one
+
+    text_many = format_single_file_report([_candidate(column="a"), _candidate(column="b")])
+    assert "Detected 2 candidate entity/group key columns:" in text_many
+
+
+def test_format_single_file_report_mentions_test_flag():
+    text = format_single_file_report([_candidate()])
+    assert "--test" in text
+
+
+def test_format_single_file_report_includes_every_candidate():
+    candidates = [_candidate(column="a"), _candidate(column="b"), _candidate(column="c")]
+    text = format_single_file_report(candidates)
     assert "'a'" in text
     assert "'b'" in text
     assert "'c'" in text
