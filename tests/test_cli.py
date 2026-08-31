@@ -61,6 +61,20 @@ def test_add_audit_subparser_fix_file_flag_settable():
     assert args.fix_file == "fix.py"
 
 
+def test_add_audit_subparser_target_flag_defaults_none():
+    parser = argparse.ArgumentParser()
+    add_audit_subparser(parser)
+    args = parser.parse_args(["train.csv"])
+    assert args.target is None
+
+
+def test_add_audit_subparser_target_flag_settable():
+    parser = argparse.ArgumentParser()
+    add_audit_subparser(parser)
+    args = parser.parse_args(["train.csv", "--target", "churn"])
+    assert args.target == "churn"
+
+
 def test_add_audit_subparser_sets_description_and_examples():
     parser = argparse.ArgumentParser()
     add_audit_subparser(parser)

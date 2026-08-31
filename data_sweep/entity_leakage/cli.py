@@ -42,6 +42,11 @@ def add_audit_subparser(parser: argparse.ArgumentParser) -> None:
         dest="fix_file",
         help="Write the runnable fix snippet to this path instead of printing it (requires scikit-learn).",
     )
+    parser.add_argument(
+        "--target",
+        help="Name of the label/target column. Enables a temporal-leakage check: flags computed "
+             "features that look like they may use data from after the label event.",
+    )
 
 
 def _collect_entity_findings(
