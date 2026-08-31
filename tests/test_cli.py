@@ -33,6 +33,20 @@ def test_add_audit_subparser_test_csv_optional():
     assert args.test_csv is None
 
 
+def test_add_audit_subparser_fix_flag_defaults_false():
+    parser = argparse.ArgumentParser()
+    add_audit_subparser(parser)
+    args = parser.parse_args(["train.csv"])
+    assert args.fix is False
+
+
+def test_add_audit_subparser_fix_flag_settable():
+    parser = argparse.ArgumentParser()
+    add_audit_subparser(parser)
+    args = parser.parse_args(["train.csv", "--fix"])
+    assert args.fix is True
+
+
 def test_add_audit_subparser_sets_description_and_examples():
     parser = argparse.ArgumentParser()
     add_audit_subparser(parser)
@@ -76,7 +90,7 @@ def test_run_audit_single_file_mode_reports_candidates(tmp_path, capsys):
     train_df, _ = make_leaky_split(seed=0)
     train_path = _write_csv(train_df, tmp_path / "train.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=None))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=None, fix=False))
 
     out = capsys.readouterr().out
     assert "entity_id" in out
@@ -88,7 +102,7 @@ def test_run_audit_two_file_mode_reports_leakage(tmp_path, capsys):
     train_path = _write_csv(train_df, tmp_path / "train.csv")
     test_path = _write_csv(test_df, tmp_path / "test.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False))
 
     out = capsys.readouterr().out
     assert "entity_id" in out
@@ -100,7 +114,7 @@ def test_run_audit_two_file_mode_no_leakage(tmp_path, capsys):
     train_path = _write_csv(train_df, tmp_path / "train.csv")
     test_path = _write_csv(test_df, tmp_path / "test.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False))
 
     out = capsys.readouterr().out
     assert "No entity/group leakage detected" in out
@@ -110,12 +124,58 @@ def test_run_audit_missing_train_file_exits_cleanly(tmp_path, capsys):
     missing_path = str(tmp_path / "does_not_exist.csv")
 
     with pytest.raises(SystemExit) as excinfo:
-        run_audit(argparse.Namespace(input_csv=missing_path, test_csv=None))
+        run_audit(argparse.Namespace(input_csv=missing_path, test_csv=None, fix=False))
 
     assert excinfo.value.code == 1
     err = capsys.readouterr().err
     assert "Error:" in err
     assert "does_not_exist.csv" in err
+
+
+def test_run_audit_fix_two_file_mode_prints_fix_code(tmp_path, capsys):
+    train_df, test_df = make_leaky_split(overlap_entities=20, seed=0)
+    train_path = _write_csv(train_df, tmp_path / "train.csv")
+    test_path = _write_csv(test_df, tmp_path / "test.csv")
+
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True))
+
+    out = capsys.readouterr().out
+    assert "GroupShuffleSplit" in out
+    assert "entity_id" in out
+
+
+def test_run_audit_fix_two_file_mode_no_leakage_says_nothing_to_fix(tmp_path, capsys):
+    train_df, test_df = make_disjoint_split(seed=0)
+    train_path = _write_csv(train_df, tmp_path / "train.csv")
+    test_path = _write_csv(test_df, tmp_path / "test.csv")
+
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True))
+
+    out = capsys.readouterr().out
+    assert "Nothing to fix" in out
+    assert "GroupShuffleSplit" not in out
+
+
+def test_run_audit_fix_single_file_mode_prints_fix_code(tmp_path, capsys):
+    train_df, _ = make_leaky_split(seed=0)
+    train_path = _write_csv(train_df, tmp_path / "train.csv")
+
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=None, fix=True))
+
+    out = capsys.readouterr().out
+    assert "GroupKFold" in out
+    assert "entity_id" in out
+
+
+def test_run_audit_no_fix_flag_does_not_print_fix_code(tmp_path, capsys):
+    train_df, test_df = make_leaky_split(overlap_entities=20, seed=0)
+    train_path = _write_csv(train_df, tmp_path / "train.csv")
+    test_path = _write_csv(test_df, tmp_path / "test.csv")
+
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False))
+
+    out = capsys.readouterr().out
+    assert "GroupShuffleSplit" not in out
 
 
 def test_run_audit_missing_test_file_exits_cleanly(tmp_path, capsys):
@@ -124,7 +184,7 @@ def test_run_audit_missing_test_file_exits_cleanly(tmp_path, capsys):
     missing_path = str(tmp_path / "does_not_exist.csv")
 
     with pytest.raises(SystemExit) as excinfo:
-        run_audit(argparse.Namespace(input_csv=train_path, test_csv=missing_path))
+        run_audit(argparse.Namespace(input_csv=train_path, test_csv=missing_path, fix=False))
 
     assert excinfo.value.code == 1
     err = capsys.readouterr().err
