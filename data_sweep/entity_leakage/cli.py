@@ -47,6 +47,20 @@ def add_audit_subparser(parser: argparse.ArgumentParser) -> None:
         help="Name of the label/target column. Enables a temporal-leakage check: flags computed "
              "features that look like they may use data from after the label event.",
     )
+    parser.add_argument(
+        "--event-time",
+        dest="event_time_col",
+        help="Column marking when the label event occurred (e.g. cancel_date). Used with "
+             "--record-time for the temporal-leakage check's elapsed-time correlation signal. "
+             "Both must be given together -- providing only one behaves like providing neither, "
+             "and the check runs at reduced confidence.",
+    )
+    parser.add_argument(
+        "--record-time",
+        dest="record_time_col",
+        help="Column marking when the row/features were observed (e.g. snapshot_date). "
+             "Used with --event-time; see its help for details.",
+    )
 
 
 def _collect_entity_findings(

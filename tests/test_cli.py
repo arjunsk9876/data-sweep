@@ -75,6 +75,25 @@ def test_add_audit_subparser_target_flag_settable():
     assert args.target == "churn"
 
 
+def test_add_audit_subparser_event_and_record_time_flags_default_none():
+    parser = argparse.ArgumentParser()
+    add_audit_subparser(parser)
+    args = parser.parse_args(["train.csv"])
+    assert args.event_time_col is None
+    assert args.record_time_col is None
+
+
+def test_add_audit_subparser_event_and_record_time_flags_settable():
+    parser = argparse.ArgumentParser()
+    add_audit_subparser(parser)
+    args = parser.parse_args([
+        "train.csv", "--target", "churn",
+        "--event-time", "cancel_date", "--record-time", "snapshot_date",
+    ])
+    assert args.event_time_col == "cancel_date"
+    assert args.record_time_col == "snapshot_date"
+
+
 def test_add_audit_subparser_sets_description_and_examples():
     parser = argparse.ArgumentParser()
     add_audit_subparser(parser)
