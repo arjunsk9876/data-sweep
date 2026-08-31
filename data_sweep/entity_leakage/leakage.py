@@ -55,4 +55,18 @@ def check_cross_split_leakage(
                 example_overlapping_values=sorted(str(v) for v in overlap_values)[:3],
             ))
 
-    return findings
+    return rank_by_severity(findings)
+
+
+def _severity_key(finding: LeakageFinding) -> tuple:
+    return (finding.overlap_ratio, finding.overlap_count, finding.candidate_key.score)
+
+
+def rank_by_severity(findings: List[LeakageFinding]) -> List[LeakageFinding]:
+    """Sort leakage findings most-severe first.
+
+    A higher overlap ratio wins; ties broken by overlap count (more affected
+    entities is worse even at the same rate), then by how strong the
+    underlying candidate-key evidence was.
+    """
+    return sorted(findings, key=_severity_key, reverse=True)
