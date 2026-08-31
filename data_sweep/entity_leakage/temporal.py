@@ -231,6 +231,7 @@ def check_temporal_leakage(
             predictiveness_metric=predictiveness.metric if predictiveness else None,
             severity=severity,
             reduced_confidence=reduced_confidence,
+            event_time_col=event_time_col,
         ))
 
     return rank_temporal_findings(findings)

@@ -1,6 +1,13 @@
+from data_sweep.entity_leakage.findings import TemporalLeakageFinding
 from data_sweep.entity_leakage.keys import CandidateKey
 from data_sweep.entity_leakage.leakage import LeakageFinding
-from data_sweep.entity_leakage.report import format_audit_report, format_finding, format_single_file_report
+from data_sweep.entity_leakage.report import (
+    format_audit_report,
+    format_finding,
+    format_single_file_report,
+    format_temporal_finding,
+    format_temporal_report,
+)
 
 
 def _finding(column="entity_id", overlap_ratio=0.2, overlap_count=20, test_entity_count=100, examples=None):
@@ -116,3 +123,103 @@ def test_format_single_file_report_includes_every_candidate():
     assert "'a'" in text
     assert "'b'" in text
     assert "'c'" in text
+
+
+def _temporal_finding(**overrides):
+    defaults = dict(
+        feature="total_purchases",
+        name_signal_matched=True,
+        elapsed_time_correlation=0.81,
+        predictiveness_score=0.93,
+        predictiveness_metric="auc",
+        severity="HIGH",
+        reduced_confidence=False,
+        event_time_col="cancel_date",
+    )
+    defaults.update(overrides)
+    return TemporalLeakageFinding(**defaults)
+
+
+def test_format_temporal_finding_full_confidence_header():
+    text = format_temporal_finding(_temporal_finding(reduced_confidence=False))
+    assert "POTENTIAL TEMPORAL LEAKAGE" in text
+    assert "POSSIBLE" not in text
+
+
+def test_format_temporal_finding_reduced_confidence_header():
+    text = format_temporal_finding(_temporal_finding(reduced_confidence=True, elapsed_time_correlation=None))
+    assert "POSSIBLE TEMPORAL LEAKAGE" in text
+    assert "lower confidence" in text
+    assert "no event/record timestamps provided" in text
+
+
+def test_format_temporal_finding_includes_feature_name():
+    text = format_temporal_finding(_temporal_finding(feature="avg_response_time"))
+    assert "avg_response_time" in text
+
+
+def test_format_temporal_finding_includes_name_signal_line_only_when_matched():
+    matched = format_temporal_finding(_temporal_finding(name_signal_matched=True))
+    assert "Name pattern matched" in matched
+
+    unmatched = format_temporal_finding(_temporal_finding(name_signal_matched=False))
+    assert "Name pattern matched" not in unmatched
+
+
+def test_format_temporal_finding_includes_elapsed_correlation_when_available():
+    text = format_temporal_finding(_temporal_finding(elapsed_time_correlation=0.81))
+    assert "Elapsed-time correlation: 0.81" in text
+    assert "suspicious" in text
+
+
+def test_format_temporal_finding_omits_elapsed_correlation_when_unavailable():
+    text = format_temporal_finding(_temporal_finding(elapsed_time_correlation=None, reduced_confidence=True))
+    assert "Elapsed-time correlation" not in text
+
+
+def test_format_temporal_finding_includes_predictiveness_metric_and_score():
+    text = format_temporal_finding(_temporal_finding(predictiveness_score=0.93, predictiveness_metric="auc"))
+    assert "AUC" in text
+    assert "0.93" in text
+
+
+def test_format_temporal_finding_includes_severity():
+    text = format_temporal_finding(_temporal_finding(severity="MEDIUM"))
+    assert "Severity: MEDIUM" in text
+
+
+def test_format_temporal_finding_recommendation_names_event_time_column():
+    text = format_temporal_finding(_temporal_finding(event_time_col="cancel_date"))
+    assert "before 'cancel_date'" in text
+
+
+def test_format_temporal_finding_recommendation_falls_back_without_event_time_column():
+    text = format_temporal_finding(_temporal_finding(event_time_col=None))
+    assert "before the label event" in text
+
+
+def test_format_temporal_finding_frames_as_heuristic_not_proof():
+    text = format_temporal_finding(_temporal_finding())
+    assert "not proof" in text
+    assert "worth investigating" in text
+
+
+def test_format_temporal_report_no_findings():
+    text = format_temporal_report([])
+    assert "No potential temporal leakage detected." in text
+
+
+def test_format_temporal_report_singular_plural():
+    text_one = format_temporal_report([_temporal_finding(feature="a")])
+    assert "Found 1 feature with potential temporal leakage:" in text_one
+
+    text_many = format_temporal_report([_temporal_finding(feature="a"), _temporal_finding(feature="b")])
+    assert "Found 2 features with potential temporal leakage:" in text_many
+
+
+def test_format_temporal_report_includes_every_finding():
+    findings = [_temporal_finding(feature="a"), _temporal_finding(feature="b"), _temporal_finding(feature="c")]
+    text = format_temporal_report(findings)
+    assert "Feature: a" in text
+    assert "Feature: b" in text
+    assert "Feature: c" in text

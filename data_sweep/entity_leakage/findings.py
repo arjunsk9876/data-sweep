@@ -88,6 +88,11 @@ class TemporalLeakageFinding:
     label the finding "POSSIBLE" instead of "POTENTIAL" per the PRD, so a
     weaker-evidence finding is never presented with the same confidence as
     a full one.
+
+    event_time_col carries the actual --event-time column name through so
+    report.py can name it in the recommendation ("recompute before
+    'cancel_date'") rather than speaking only in the abstract. None when
+    timestamps weren't provided.
     """
     feature: str
     name_signal_matched: bool
@@ -96,3 +101,4 @@ class TemporalLeakageFinding:
     predictiveness_metric: Optional[str]  # "auc" or "r2", or None if unavailable
     severity: str  # "HIGH" / "MEDIUM" / "LOW"
     reduced_confidence: bool
+    event_time_col: Optional[str] = None  # for a specific recommendation ("before 'cancel_date'")
