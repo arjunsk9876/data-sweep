@@ -21,10 +21,15 @@ def compute_predictiveness(feature: pd.Series, target: pd.Series) -> Optional[Pr
     predictive on its own is suspicious), and later basic feature-target
     leakage too, per the roadmap.
 
-    Returns None when a score can't be meaningfully computed (too few
-    complete rows, a constant feature with no discriminative power, or a
-    target shape this doesn't yet support) rather than fabricating a
-    misleading number.
+    A binary target (exactly 2 distinct values) is scored as AUC; any other
+    numeric target is treated as continuous and scored as R^2. A non-numeric
+    target with more than 2 categories (true multi-class) isn't supported
+    yet and returns None -- proper one-vs-rest scoring is more machinery
+    than this phase needs.
+
+    Returns None whenever a score can't be meaningfully computed (too few
+    complete rows, a constant feature with no discriminative power, or an
+    unsupported target shape) rather than fabricating a misleading number.
     """
     aligned = pd.DataFrame({"feature": feature, "target": target}).dropna()
     if len(aligned) < MIN_ROWS_FOR_PREDICTIVENESS:
@@ -32,6 +37,9 @@ def compute_predictiveness(feature: pd.Series, target: pd.Series) -> Optional[Pr
 
     if aligned["target"].nunique() == 2:
         return _binary_auc(aligned)
+
+    if pd.api.types.is_numeric_dtype(aligned["target"]):
+        return _continuous_r2(aligned)
 
     return None
 
@@ -59,3 +67,16 @@ def _binary_auc(aligned: pd.DataFrame) -> Optional[PredictivenessResult]:
     # which way it points
     score = max(auc, 1 - auc)
     return PredictivenessResult(score=float(score), metric="auc")
+
+
+def _continuous_r2(aligned: pd.DataFrame) -> Optional[PredictivenessResult]:
+    if not pd.api.types.is_numeric_dtype(aligned["feature"]):
+        return None  # can't correlate a non-numeric feature with a continuous target
+    if aligned["feature"].nunique() < 2 or aligned["target"].nunique() < 2:
+        return None  # a constant series has no variance to correlate
+
+    corr = aligned["feature"].corr(aligned["target"])
+    if pd.isna(corr):
+        return None
+
+    return PredictivenessResult(score=float(corr ** 2), metric="r2")

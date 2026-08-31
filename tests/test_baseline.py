@@ -46,10 +46,43 @@ def test_too_few_rows_returns_none():
     assert compute_predictiveness(feature, target) is None
 
 
-def test_non_binary_target_returns_none_for_now():
-    # continuous-target (R^2) support lands in a later commit
+def test_perfectly_linear_continuous_target_gives_r2_near_one():
     target = pd.Series(np.linspace(0, 100, 50))
     feature = pd.Series(np.linspace(0, 1, 50))
+    result = compute_predictiveness(feature, target)
+    assert result is not None
+    assert result.metric == "r2"
+    assert result.score == pytest.approx(1.0)
+
+
+def test_inversely_linear_continuous_target_still_gives_high_r2():
+    target = pd.Series(np.linspace(0, 100, 50))
+    feature = pd.Series(np.linspace(1, 0, 50))  # perfectly inverse, r^2 discards sign
+    result = compute_predictiveness(feature, target)
+    assert result is not None
+    assert result.score == pytest.approx(1.0)
+
+
+def test_uncorrelated_continuous_target_gives_low_r2():
+    rng = np.random.RandomState(0)
+    target = pd.Series(rng.normal(0, 1, 2000))
+    feature = pd.Series(rng.normal(0, 1, 2000))
+    result = compute_predictiveness(feature, target)
+    assert result is not None
+    assert result.metric == "r2"
+    assert result.score < 0.05
+
+
+def test_constant_feature_returns_none_for_continuous_target():
+    target = pd.Series(np.linspace(0, 100, 50))
+    feature = pd.Series([3.0] * 50)
+    assert compute_predictiveness(feature, target) is None
+
+
+def test_multiclass_categorical_target_returns_none():
+    # true multi-class (non-numeric, >2 categories) isn't supported yet
+    target = pd.Series((["a", "b", "c"] * 20)[:50])
+    feature = pd.Series(range(50))
     assert compute_predictiveness(feature, target) is None
 
 
