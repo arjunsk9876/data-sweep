@@ -1,8 +1,9 @@
-"""Synthetic train/test dataset generators with known, ground-truth entity structure.
+"""Synthetic dataset generators with known, guaranteed ground truth.
 
-Used by the entity-leakage detector tests to check both true positives (a
-real injected leak gets found) and true negatives (no leak, or no entity
-structure at all, produces no findings).
+Used by the leakage detector tests (entity leakage's train/test pairs, and
+temporal leakage's single-file feature datasets) to check both true
+positives (a real injected leak gets found) and true negatives (no leak, or
+no leak-shaped structure at all, produces no findings).
 """
 from typing import List, Optional
 
@@ -86,6 +87,59 @@ def make_no_entity_structure(
         "value": rng.normal(0, 1, n_test),
     })
     return train_df, test_df
+
+
+def make_temporal_leak_dataset(
+    n_rows: int = 1000,
+    seed: int = 0,
+    elapsed_leak_strength: float = 0.6,
+    target_leak_boost: float = 90.0,
+) -> pd.DataFrame:
+    """Single-file dataset with a known-good and a known-leaked aggregate.
+
+    Both `total_purchases` (leaked) and `total_purchases_windowed` (clean
+    control) are built from the same underlying `true_rate` signal, so they
+    start out comparably informative -- the leaked one is then additionally
+    inflated by `elapsed_days` (the gap between `snapshot_date` and
+    `cancel_date`) and by `target` itself, simulating a feature that
+    accidentally kept accumulating past the label event instead of being
+    cut off at `snapshot_date`.
+
+    Pass elapsed_leak_strength=0, target_leak_boost=0 to get an all-clean
+    dataset instead (both features legitimately windowed) -- useful for
+    false-positive testing without a second generator function.
+    """
+    rng = np.random.RandomState(seed)
+
+    true_rate = np.clip(rng.normal(5, 1.5, n_rows), 0.5, None)
+
+    # genuine, modest relationship: a higher true purchase rate makes churn
+    # somewhat less likely -- so even the clean control feature carries some
+    # real signal, it just shouldn't be *unusually* predictive on its own
+    prob_churn = 1 / (1 + np.exp(0.15 * (true_rate - 5)))
+    target = (rng.uniform(0, 1, n_rows) < prob_churn).astype(int)
+
+    elapsed_days = rng.uniform(1, 200, n_rows)
+    snapshot_date = pd.Timestamp("2023-01-01") + pd.to_timedelta(rng.uniform(0, 365, n_rows), unit="D")
+    cancel_date = snapshot_date + pd.to_timedelta(elapsed_days, unit="D")
+
+    fixed_window_days = 30
+    clean_feature = true_rate * fixed_window_days + rng.normal(0, 3, n_rows)
+
+    leaked_feature = (
+        true_rate * fixed_window_days
+        + elapsed_leak_strength * elapsed_days
+        + target_leak_boost * target
+        + rng.normal(0, 2, n_rows)
+    )
+
+    return pd.DataFrame({
+        "snapshot_date": snapshot_date,
+        "cancel_date": cancel_date,
+        "target": target,
+        "total_purchases": leaked_feature,
+        "total_purchases_windowed": clean_feature,
+    })
 
 
 def _make_frame(
