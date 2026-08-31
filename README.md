@@ -183,30 +183,69 @@ Column 'customer_id' looks like an entity/group key, and 42 of 210 test values
   instead of by row, so each entity appears in only one side of the split.
 ```
 
-**After** — re-split by `customer_id` (e.g. with a grouped train/test split) and re-run:
+### Turning a finding into a fix
+
+Finding the leak is only half the problem — you'd still have to know that `GroupShuffleSplit` (not `train_test_split`) is the fix, and write the code yourself. Add `--fix` to get a runnable snippet instead, using the actual column data-sweep found:
+
+```bash
+data-sweep audit train.csv --test test.csv --fix
+```
+
+```
+Found 1 possible leak between train and test:
+
+Column 'customer_id' looks like an entity/group key, and 42 of 210 test values (20.0%) also appear in the training data.
+  Example overlapping values: C1000, C1001, C1002
+  This means rows for the same entity can land in both train and test, so a model can partly memorize the entity instead of learning to generalize -- test performance can look better than it will be on genuinely unseen entities.
+  Recommendation: split train/test by 'customer_id' (a group/entity split) instead of by row, so each entity appears in only one side of the split.
+
+from sklearn.model_selection import GroupShuffleSplit
+
+splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+train_idx, test_idx = next(splitter.split(df, groups=df['customer_id']))
+
+train_df = df.iloc[train_idx]
+test_df = df.iloc[test_idx]
+```
+
+That's not a template with a blank to fill in — `'customer_id'` is the real column name data-sweep detected, ready to paste into your own script (`df` there is your combined dataframe: `pd.concat([train_df, test_df])`, since the whole point is re-splitting cleanly from scratch rather than patching the existing, already-contaminated split). Run `data-sweep audit train.csv --test test.csv --fix-file fix.py` instead to write it straight to a file rather than print it.
+
+**After** — re-split by `customer_id` (e.g. with the generated fix above) and re-run:
 
 ```
 No entity/group leakage detected between train and test.
 ```
 
-**Single-file mode** — run it on just one file to see what data-sweep considers a candidate entity/group key, even before you've made a split:
+**Single-file mode** — run it on just one file to see what data-sweep considers a candidate entity/group key, even before you've made a split. `--fix` still works here — the risk is about the *future* split/CV you haven't made yet, so the generated code uses `GroupKFold` instead:
 
 ```bash
-data-sweep audit train.csv
+data-sweep audit train.csv --fix
 ```
 
 ```
 Detected 1 candidate entity/group key column:
-  'customer_id' -- uniqueness ratio 0.183 (signals: uniqueness, format, name)
+  'customer_id' -- uniqueness ratio 0.333 (signals: uniqueness, format, name)
 
 No --test file was provided, so this was informational only -- no leakage check was run. Pass --test <file> to check these columns for overlap between train and test.
+
+from sklearn.model_selection import GroupKFold
+
+gkf = GroupKFold(n_splits=5)
+for train_idx, val_idx in gkf.split(df, groups=df['customer_id']):
+    train_fold = df.iloc[train_idx]
+    val_fold = df.iloc[val_idx]
+    # ... fit/evaluate per fold
 ```
+
+If more than one column looks like an entity key, the highest-severity one gets fixed and every other candidate gets a one-line comment above the code noting it as worth considering too — nothing gets silently dropped.
+
+`--fix`/`--fix-file` need scikit-learn (`pip install scikit-learn`, or `pip install data-sweep[fix]`) — auditing itself never requires it, only generating a fix that calls into it does. Without it installed, `--fix` prints a plain error after the normal audit report instead of crashing.
 
 ## Development
 
 **`clean`**: detection logic lives in `data_sweep/detectors/` — one module per concern (duplicates, constant, missing, outliers, mixed-type, categorical, leakage, imbalance, multicollinearity). `data_sweep/profile.py` is a thin orchestrator that calls each detector and reports what it finds; `data_sweep/clean.py` calls the same detector decision logic to actually apply the fix, so the two never drift apart.
 
-**`audit`**: lives in `data_sweep/entity_leakage/` — `io.py` loads the CSV(s) with clean error handling, `keys.py` scores every column as a candidate entity/group key (uniqueness ratio gates candidacy; ID-format and name-keyword signals only boost ranking among already-qualified candidates, never gate on their own), `leakage.py` checks candidate columns for cross-split value overlap and ranks findings worst-first, and `report.py` turns the results into the plain-language output shown above. `cli.py` wires it all together. `tests/synthetic.py` generates train/test pairs with known, guaranteed ground truth (a real injected leak, a genuinely disjoint split, or no entity structure at all) so detection logic can be tested against cases with a known right answer, not just hand-picked examples.
+**`audit`**: lives in `data_sweep/entity_leakage/` — `io.py` loads the CSV(s) with clean error handling, `keys.py` scores every column as a candidate entity/group key (uniqueness ratio gates candidacy; ID-format and name-keyword signals only boost ranking among already-qualified candidates, never gate on their own), `leakage.py` checks candidate columns for cross-split value overlap and ranks findings worst-first, and `report.py` turns the results into the plain-language output shown above. `findings.py` defines `EntityLeakageFinding`, the mode-aware shape (`two_file` vs `single_file`) that both the plain-language report and fix generation build on. `fixes.py` renders a runnable fix (`GroupShuffleSplit` or `GroupKFold`, picked by mode) from those findings, with a clean error if scikit-learn isn't installed. `cli.py` wires it all together, including `--fix`/`--fix-file`. `tests/synthetic.py` generates train/test pairs with known, guaranteed ground truth (a real injected leak, a genuinely disjoint split, or no entity structure at all) so detection logic can be tested against cases with a known right answer, not just hand-picked examples; `tests/test_closed_loop.py` goes a step further and proves a generated fix actually resolves the leak it targets, by applying it and re-running the audit.
 
 Install with dev dependencies (pytest, mypy):
 
