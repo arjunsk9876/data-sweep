@@ -1,6 +1,6 @@
 # data-sweep
 
-A CLI tool that scans a CSV, fixes common data quality issues, and writes a plain-English report explaining exactly what it changed and why.
+A CLI tool that scans a CSV, fixes common data quality issues, audits train/test splits for hidden entity leakage, and writes a plain-English report explaining exactly what it found and why.
 
 ## Setup
 
@@ -28,7 +28,7 @@ Then run it directly with `python3 run.py clean yourfile.csv` instead of `data-s
 
 ## Usage
 
-data-sweep has two subcommands: `clean` (profile + fix data quality issues — the original command) and `audit` (find hidden entity/group leakage between a train and test split — work in progress). If you used data-sweep before it had subcommands, `data-sweep yourfile.csv` is now `data-sweep clean yourfile.csv`.
+data-sweep has two subcommands: `clean` (profile + fix data quality issues) and `audit` (find hidden entity/group leakage between a train and test split — see [Entity leakage detection](#entity-leakage-detection) below). If you used data-sweep before it had subcommands, `data-sweep yourfile.csv` is now `data-sweep clean yourfile.csv`.
 
 The CSV you want to clean does **not** need to live inside this repo — pass any path, relative or absolute:
 
@@ -157,9 +157,56 @@ Run with `--target label` on a messier dataset (mixed-type column, two redundant
 
 With `--dry-run`, you get `report_yourfile.md` only — no `cleaned_yourfile.csv` is written, and the terminal says so explicitly.
 
+## Entity leakage detection
+
+The flagship feature of `audit`: automatically finds columns that act as an entity or group key — a customer id, household id, device id, anything where multiple rows belong to the same real-world entity — and checks whether that same entity shows up in *both* your train and test files. If it does, your test score is inflated: the model isn't actually being evaluated on unseen entities.
+
+No configuration needed. You never have to tell it which column is the entity key — it's inferred straight from the data: how many distinct values a column has relative to the row count, whether the values look ID-shaped (UUID, hash, zero-padded number, alphanumeric code), and whether the column name hints at it (`id`, `key`, `uuid`, and similar). None of those signals require you to already know the answer.
+
+```bash
+data-sweep audit train.csv --test test.csv
+```
+
+**Before** — say `train.csv` and `test.csv` were split randomly by row instead of by customer, so the same customer's other purchases end up on both sides:
+
+```
+Found 1 possible leak between train and test:
+
+Column 'customer_id' looks like an entity/group key, and 42 of 210 test values
+(20.0%) also appear in the training data.
+  Example overlapping values: C1042, C1058, C1091
+  This means rows for the same entity can land in both train and test, so a
+  model can partly memorize the entity instead of learning to generalize --
+  test performance can look better than it will be on genuinely unseen
+  entities.
+  Recommendation: split train/test by 'customer_id' (a group/entity split)
+  instead of by row, so each entity appears in only one side of the split.
+```
+
+**After** — re-split by `customer_id` (e.g. with a grouped train/test split) and re-run:
+
+```
+No entity/group leakage detected between train and test.
+```
+
+**Single-file mode** — run it on just one file to see what data-sweep considers a candidate entity/group key, even before you've made a split:
+
+```bash
+data-sweep audit train.csv
+```
+
+```
+Detected 1 candidate entity/group key column:
+  'customer_id' -- uniqueness ratio 0.183 (signals: uniqueness, format, name)
+
+No --test file was provided, so this was informational only -- no leakage check was run. Pass --test <file> to check these columns for overlap between train and test.
+```
+
 ## Development
 
-Detection logic lives in `data_sweep/detectors/` — one module per concern (duplicates, constant, missing, outliers, mixed-type, categorical, leakage, imbalance, multicollinearity). `data_sweep/profile.py` is a thin orchestrator that calls each detector and reports what it finds; `data_sweep/clean.py` calls the same detector decision logic to actually apply the fix, so the two never drift apart.
+**`clean`**: detection logic lives in `data_sweep/detectors/` — one module per concern (duplicates, constant, missing, outliers, mixed-type, categorical, leakage, imbalance, multicollinearity). `data_sweep/profile.py` is a thin orchestrator that calls each detector and reports what it finds; `data_sweep/clean.py` calls the same detector decision logic to actually apply the fix, so the two never drift apart.
+
+**`audit`**: lives in `data_sweep/entity_leakage/` — `io.py` loads the CSV(s) with clean error handling, `keys.py` scores every column as a candidate entity/group key (uniqueness ratio gates candidacy; ID-format and name-keyword signals only boost ranking among already-qualified candidates, never gate on their own), `leakage.py` checks candidate columns for cross-split value overlap and ranks findings worst-first, and `report.py` turns the results into the plain-language output shown above. `cli.py` wires it all together. `tests/synthetic.py` generates train/test pairs with known, guaranteed ground truth (a real injected leak, a genuinely disjoint split, or no entity structure at all) so detection logic can be tested against cases with a known right answer, not just hand-picked examples.
 
 Install with dev dependencies (pytest, mypy):
 
