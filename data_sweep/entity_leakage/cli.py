@@ -9,7 +9,8 @@ from data_sweep.entity_leakage.fixes import SklearnMissingError, generate_fix_co
 from data_sweep.entity_leakage.io import DatasetLoadError, load_datasets
 from data_sweep.entity_leakage.keys import score_candidate_keys
 from data_sweep.entity_leakage.leakage import check_cross_split_leakage, to_entity_leakage_findings
-from data_sweep.entity_leakage.report import format_audit_report, format_single_file_report
+from data_sweep.entity_leakage.report import format_audit_report, format_single_file_report, format_temporal_report
+from data_sweep.entity_leakage.temporal import check_temporal_leakage
 
 
 def add_audit_subparser(parser: argparse.ArgumentParser) -> None:
@@ -76,6 +77,21 @@ def _collect_entity_findings(
     return to_entity_leakage_findings(findings)
 
 
+def _run_temporal_check(args: argparse.Namespace, train_df: pd.DataFrame) -> None:
+    for label, col in [
+        ("--target", args.target),
+        ("--event-time", args.event_time_col),
+        ("--record-time", args.record_time_col),
+    ]:
+        if col is not None and col not in train_df.columns:
+            print(f"Error: unknown {label} column: {col}", file=sys.stderr)
+            sys.exit(1)
+
+    findings = check_temporal_leakage(train_df, args.target, args.event_time_col, args.record_time_col)
+    print()
+    print(format_temporal_report(findings))
+
+
 def run_audit(args: argparse.Namespace) -> None:
     try:
         train_df, test_df = load_datasets(args.input_csv, args.test_csv)
@@ -84,6 +100,9 @@ def run_audit(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     entity_findings = _collect_entity_findings(args, train_df, test_df)
+
+    if args.target:
+        _run_temporal_check(args, train_df)
 
     if not (args.fix or args.fix_file):
         return

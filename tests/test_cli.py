@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from data_sweep.entity_leakage.cli import add_audit_subparser, run_audit
-from tests.synthetic import make_disjoint_split, make_leaky_split
+from tests.synthetic import make_disjoint_split, make_leaky_split, make_temporal_leak_dataset
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -137,7 +137,7 @@ def test_run_audit_single_file_mode_reports_candidates(tmp_path, capsys):
     train_df, _ = make_leaky_split(seed=0)
     train_path = _write_csv(train_df, tmp_path / "train.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=None, fix=False, fix_file=None))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=None, fix=False, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     out = capsys.readouterr().out
     assert "entity_id" in out
@@ -149,7 +149,7 @@ def test_run_audit_two_file_mode_reports_leakage(tmp_path, capsys):
     train_path = _write_csv(train_df, tmp_path / "train.csv")
     test_path = _write_csv(test_df, tmp_path / "test.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=None))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     out = capsys.readouterr().out
     assert "entity_id" in out
@@ -161,7 +161,7 @@ def test_run_audit_two_file_mode_no_leakage(tmp_path, capsys):
     train_path = _write_csv(train_df, tmp_path / "train.csv")
     test_path = _write_csv(test_df, tmp_path / "test.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=None))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     out = capsys.readouterr().out
     assert "No entity/group leakage detected" in out
@@ -171,7 +171,7 @@ def test_run_audit_missing_train_file_exits_cleanly(tmp_path, capsys):
     missing_path = str(tmp_path / "does_not_exist.csv")
 
     with pytest.raises(SystemExit) as excinfo:
-        run_audit(argparse.Namespace(input_csv=missing_path, test_csv=None, fix=False, fix_file=None))
+        run_audit(argparse.Namespace(input_csv=missing_path, test_csv=None, fix=False, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     assert excinfo.value.code == 1
     err = capsys.readouterr().err
@@ -184,7 +184,7 @@ def test_run_audit_fix_two_file_mode_prints_fix_code(tmp_path, capsys):
     train_path = _write_csv(train_df, tmp_path / "train.csv")
     test_path = _write_csv(test_df, tmp_path / "test.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True, fix_file=None))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     out = capsys.readouterr().out
     assert "GroupShuffleSplit" in out
@@ -196,7 +196,7 @@ def test_run_audit_fix_two_file_mode_no_leakage_says_nothing_to_fix(tmp_path, ca
     train_path = _write_csv(train_df, tmp_path / "train.csv")
     test_path = _write_csv(test_df, tmp_path / "test.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True, fix_file=None))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     out = capsys.readouterr().out
     assert "Nothing to fix" in out
@@ -207,7 +207,7 @@ def test_run_audit_fix_single_file_mode_prints_fix_code(tmp_path, capsys):
     train_df, _ = make_leaky_split(seed=0)
     train_path = _write_csv(train_df, tmp_path / "train.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=None, fix=True, fix_file=None))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=None, fix=True, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     out = capsys.readouterr().out
     assert "GroupKFold" in out
@@ -219,7 +219,7 @@ def test_run_audit_no_fix_flag_does_not_print_fix_code(tmp_path, capsys):
     train_path = _write_csv(train_df, tmp_path / "train.csv")
     test_path = _write_csv(test_df, tmp_path / "test.csv")
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=None))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     out = capsys.readouterr().out
     assert "GroupShuffleSplit" not in out
@@ -232,7 +232,7 @@ def test_run_audit_fix_sklearn_missing_exits_cleanly(tmp_path, capsys, monkeypat
     test_path = _write_csv(test_df, tmp_path / "test.csv")
 
     with pytest.raises(SystemExit) as excinfo:
-        run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True, fix_file=None))
+        run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     assert excinfo.value.code == 1
     err = capsys.readouterr().err
@@ -246,7 +246,7 @@ def test_run_audit_fix_file_writes_fix_code(tmp_path, capsys):
     test_path = _write_csv(test_df, tmp_path / "test.csv")
     fix_path = tmp_path / "fix.py"
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=str(fix_path)))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=str(fix_path), target=None, event_time_col=None, record_time_col=None))
 
     assert fix_path.exists()
     content = fix_path.read_text()
@@ -264,7 +264,7 @@ def test_run_audit_fix_and_fix_file_together(tmp_path, capsys):
     test_path = _write_csv(test_df, tmp_path / "test.csv")
     fix_path = tmp_path / "fix.py"
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True, fix_file=str(fix_path)))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=True, fix_file=str(fix_path), target=None, event_time_col=None, record_time_col=None))
 
     assert fix_path.exists()
     out = capsys.readouterr().out
@@ -278,11 +278,117 @@ def test_run_audit_fix_file_no_leakage_writes_nothing(tmp_path, capsys):
     test_path = _write_csv(test_df, tmp_path / "test.csv")
     fix_path = tmp_path / "fix.py"
 
-    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=str(fix_path)))
+    run_audit(argparse.Namespace(input_csv=train_path, test_csv=test_path, fix=False, fix_file=str(fix_path), target=None, event_time_col=None, record_time_col=None))
 
     assert not fix_path.exists()
     out = capsys.readouterr().out
     assert "Nothing to fix" in out
+
+
+def _temporal_args(train_path, **overrides):
+    defaults = dict(
+        input_csv=train_path, test_csv=None, fix=False, fix_file=None,
+        target=None, event_time_col=None, record_time_col=None,
+    )
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+def test_run_audit_temporal_check_full_confidence_flags_leaked_feature(tmp_path, capsys):
+    df = make_temporal_leak_dataset(seed=0)
+    train_path = _write_csv(df, tmp_path / "train.csv")
+
+    run_audit(_temporal_args(
+        train_path, target="target", event_time_col="cancel_date", record_time_col="snapshot_date",
+    ))
+
+    out = capsys.readouterr().out
+    assert "POTENTIAL TEMPORAL LEAKAGE" in out
+    assert "total_purchases" in out
+    assert "Severity: HIGH" in out
+
+
+def test_run_audit_temporal_check_reduced_confidence_without_timestamps(tmp_path, capsys):
+    df = make_temporal_leak_dataset(seed=0)
+    train_path = _write_csv(df, tmp_path / "train.csv")
+
+    run_audit(_temporal_args(train_path, target="target"))
+
+    out = capsys.readouterr().out
+    assert "lower confidence" in out
+    assert "no event/record timestamps provided" in out
+
+
+def test_run_audit_no_target_means_no_temporal_check(tmp_path, capsys):
+    df = make_temporal_leak_dataset(seed=0)
+    train_path = _write_csv(df, tmp_path / "train.csv")
+
+    run_audit(_temporal_args(train_path))
+
+    out = capsys.readouterr().out
+    assert "TEMPORAL LEAKAGE" not in out
+
+
+def test_run_audit_unknown_target_column_exits_cleanly(tmp_path, capsys):
+    df = make_temporal_leak_dataset(seed=0)
+    train_path = _write_csv(df, tmp_path / "train.csv")
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_audit(_temporal_args(train_path, target="does_not_exist"))
+
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err
+    assert "--target" in err
+    assert "does_not_exist" in err
+
+
+def test_run_audit_unknown_event_time_column_exits_cleanly(tmp_path, capsys):
+    df = make_temporal_leak_dataset(seed=0)
+    train_path = _write_csv(df, tmp_path / "train.csv")
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_audit(_temporal_args(
+            train_path, target="target", event_time_col="does_not_exist", record_time_col="snapshot_date",
+        ))
+
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "--event-time" in err
+    assert "does_not_exist" in err
+
+
+def test_run_audit_unknown_record_time_column_exits_cleanly(tmp_path, capsys):
+    df = make_temporal_leak_dataset(seed=0)
+    train_path = _write_csv(df, tmp_path / "train.csv")
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_audit(_temporal_args(
+            train_path, target="target", event_time_col="cancel_date", record_time_col="does_not_exist",
+        ))
+
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "--record-time" in err
+    assert "does_not_exist" in err
+
+
+def test_run_audit_combines_entity_and_temporal_checks(tmp_path, capsys):
+    # both --test and --target given -- both checks should run in one pass
+    train_df, test_df = make_leaky_split(overlap_entities=20, seed=0)
+    temporal_df = make_temporal_leak_dataset(seed=0, n_rows=len(train_df))
+    combined_train = pd.concat([train_df.reset_index(drop=True), temporal_df.reset_index(drop=True)], axis=1)
+    train_path = _write_csv(combined_train, tmp_path / "train.csv")
+    test_path = _write_csv(test_df, tmp_path / "test.csv")
+
+    run_audit(argparse.Namespace(
+        input_csv=train_path, test_csv=test_path, fix=False, fix_file=None,
+        target="target", event_time_col="cancel_date", record_time_col="snapshot_date",
+    ))
+
+    out = capsys.readouterr().out
+    assert "Found 1 possible leak" in out  # entity leakage report
+    assert "POTENTIAL TEMPORAL LEAKAGE" in out  # temporal leakage report
 
 
 def test_run_audit_missing_test_file_exits_cleanly(tmp_path, capsys):
@@ -291,7 +397,7 @@ def test_run_audit_missing_test_file_exits_cleanly(tmp_path, capsys):
     missing_path = str(tmp_path / "does_not_exist.csv")
 
     with pytest.raises(SystemExit) as excinfo:
-        run_audit(argparse.Namespace(input_csv=train_path, test_csv=missing_path, fix=False, fix_file=None))
+        run_audit(argparse.Namespace(input_csv=train_path, test_csv=missing_path, fix=False, fix_file=None, target=None, event_time_col=None, record_time_col=None))
 
     assert excinfo.value.code == 1
     err = capsys.readouterr().err
