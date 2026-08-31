@@ -17,6 +17,13 @@ DEFAULT_MAX_UNIQUENESS_RATIO = 0.95
 SMALL_DATASET_ROW_THRESHOLD = 200
 SMALL_DATASET_MAX_UNIQUENESS_RATIO = 0.99
 
+# The ratio floor alone isn't enough on small files: a plain low-cardinality
+# categorical (e.g. a 3-value status column) can drift into the grouping
+# band purely because row count is small (3/80 = 0.0375, already above the
+# 0.02 floor). A real entity/group key implies many distinct groups, not
+# just a handful, so require an absolute minimum distinct-value count too.
+MIN_UNIQUE_COUNT = 10
+
 # score contribution of each corroborating signal; uniqueness is the gate
 # (must be in the grouping band to be a candidate at all), format/name are
 # additive boosts used to rank among candidates, never gates themselves.
@@ -45,7 +52,9 @@ def score_candidate_keys(
     A column qualifies only if its uniqueness ratio (distinct non-null
     values / total rows) falls in the "grouping band" — high enough to
     suggest a real entity, low enough to rule out both a plain row id
-    (~100% unique) and a low-cardinality categorical.
+    (~100% unique) and a low-cardinality categorical — and it has at
+    least MIN_UNIQUE_COUNT distinct values, so a handful-of-categories
+    column can't qualify by ratio alone just because the file is small.
 
     max_uniqueness_ratio defaults to DEFAULT_MAX_UNIQUENESS_RATIO, but on a
     small dataset (fewer than SMALL_DATASET_ROW_THRESHOLD rows) the ceiling
@@ -67,7 +76,11 @@ def score_candidate_keys(
 
     candidates = []
     for col in df.columns:
-        uniqueness_ratio = df[col].nunique(dropna=True) / n_rows
+        unique_count = df[col].nunique(dropna=True)
+        if unique_count < MIN_UNIQUE_COUNT:
+            continue
+
+        uniqueness_ratio = unique_count / n_rows
         if not (min_uniqueness_ratio <= uniqueness_ratio <= effective_max_ratio):
             continue
 

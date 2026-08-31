@@ -187,6 +187,15 @@ def test_explicit_max_uniqueness_ratio_overrides_small_dataset_widening():
     assert score_candidate_keys(df, max_uniqueness_ratio=0.95) == []
 
 
+def test_low_cardinality_column_excluded_even_on_small_dataset():
+    # a 3-value categorical can drift into the ratio grouping band purely
+    # because the file is small (3/80 = 0.0375, already above the 0.02
+    # floor) -- the absolute MIN_UNIQUE_COUNT floor must still exclude it
+    df = pd.DataFrame({"status": (["x", "y", "z"] * 27)[:80]})
+    assert df["status"].nunique() == 3
+    assert score_candidate_keys(df) == []
+
+
 def test_synthetic_leaky_split_feature_columns_not_flagged():
     # only the real entity column should qualify -- the plain feature columns
     # shouldn't accidentally land in the grouping band
