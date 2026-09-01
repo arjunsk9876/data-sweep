@@ -61,6 +61,18 @@ def run_clean(args: argparse.Namespace) -> None:
         print(f"Wrote {cleaned_path} and {report_path}.")
 
 
+def run_mcp(args: argparse.Namespace) -> None:
+    try:
+        from data_sweep.mcp_server import main as launch_mcp_server
+    except ImportError:
+        print(
+            "Error: MCP support requires the 'mcp' package -- pip install 'data-sweep[mcp]'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    launch_mcp_server()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="data-sweep",
@@ -72,6 +84,7 @@ def main() -> None:
                "  data-sweep audit train.csv\n"
                "  data-sweep audit train.csv --test test.csv --fix\n"
                "  data-sweep audit train.csv --target churn --event-time cancel_date --record-time snapshot_date\n"
+               "  data-sweep mcp\n"
                "\n"
                "Run `data-sweep <command> --help` for command-specific options.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -109,6 +122,13 @@ def main() -> None:
     audit_parser = subparsers.add_parser("audit", help="Audit a CSV (and optional test split) for hidden entity/group leakage.")
     add_audit_subparser(audit_parser)
     audit_parser.set_defaults(func=run_audit)
+
+    mcp_parser = subparsers.add_parser(
+        "mcp",
+        help="Launch the data-sweep MCP server over stdio, for agentic coding tools "
+             "(Claude Code, Cursor, etc) to call directly during a session.",
+    )
+    mcp_parser.set_defaults(func=run_mcp)
 
     args = parser.parse_args()
     args.func(args)
