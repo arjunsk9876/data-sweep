@@ -44,7 +44,7 @@ This also checks for temporal leakage: computed features (like `total_purchases`
 
 ## MCP server
 
-data-sweep also runs as an MCP server, so an agentic coding tool can call `audit_dataset` and `generate_fix` itself mid-session -- no need for a human to remember to run the CLI. Same underlying checks as the CLI, just exposed as tools. Requires Python 3.10+.
+data-sweep also runs as an MCP server, so an agentic coding tool can call `detect_leakage_before_training` and `generate_fix` itself mid-session -- no need for a human to remember to run the CLI. Same underlying checks as the CLI, just exposed as tools. Requires Python 3.10+.
 
 ```bash
 pip install -e ".[mcp]"
@@ -69,16 +69,16 @@ claude mcp add data-sweep -- data-sweep mcp
 }
 ```
 
-Three tools: `audit_dataset` (entity/temporal leakage findings as JSON), `generate_fix` (turns entity-leakage findings into runnable fix code), and `list_checks` (what's available, for an agent deciding whether to bother). Stdio transport only, local files only -- it never writes to disk or executes generated code itself.
+Three tools: `detect_leakage_before_training` (entity/temporal leakage findings as JSON), `generate_fix` (turns entity-leakage findings into runnable fix code), and `list_checks` (what's available, for an agent deciding whether to bother). Stdio transport only, local files only -- it never writes to disk or executes generated code itself.
 
 Example, mid-scaffolding:
 
 ```
 > set up a churn model from customer_train.csv / customer_test.csv
 
-[agent reads the files, then calls audit_dataset before writing training code]
+[agent reads the files, then calls detect_leakage_before_training before writing training code]
 
-  audit_dataset(path="customer_train.csv", test_path="customer_test.csv")
+  detect_leakage_before_training(path="customer_train.csv", test_path="customer_test.csv")
   -> 1 finding: entity_leakage, candidate_key="customer_id", severity="high",
      overlap_pct=18.4 -- 18.4% of test customers also appear in train
 

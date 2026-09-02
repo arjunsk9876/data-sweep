@@ -197,7 +197,11 @@ server: MCPServer = MCPServer("data-sweep", version="0.4.0")
 
 
 @server.tool(
-    name="audit_dataset",
+    # Named for what it does, not what it's called internally -- MCP clients
+    # that only surface tool names up front (no description) until a query
+    # matches still get enough signal to reach for this unprompted, right
+    # when "before training a model" is exactly the situation the caller is in.
+    name="detect_leakage_before_training",
     description=(
         "Run this after loading a CSV and before training a model, especially when the dataset "
         "has separate train/test files -- catches hidden entity/group leakage (the same "
@@ -220,11 +224,11 @@ def audit_dataset(
 @server.tool(
     name="generate_fix",
     description=(
-        "Turn entity_leakage findings from audit_dataset into a runnable Python snippet "
-        "(scikit-learn GroupShuffleSplit or GroupKFold) that re-splits the data by the leaking "
-        "key. Call this right after audit_dataset reports entity_leakage findings, passing "
-        "those findings through unchanged. Returns code text only -- it is never executed or "
-        "written to disk by this tool."
+        "Turn entity_leakage findings from detect_leakage_before_training into a runnable "
+        "Python snippet (scikit-learn GroupShuffleSplit or GroupKFold) that re-splits the data "
+        "by the leaking key. Call this right after detect_leakage_before_training reports "
+        "entity_leakage findings, passing those findings through unchanged. Returns code text "
+        "only -- it is never executed or written to disk by this tool."
     ),
 )
 def generate_fix(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -235,7 +239,8 @@ def generate_fix(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     name="list_checks",
     description=(
         "Lists the checks data-sweep can run and what inputs each needs. Call this first if "
-        "you're unsure whether audit_dataset is relevant to the dataset you're working with."
+        "you're unsure whether detect_leakage_before_training is relevant to the dataset you're "
+        "working with."
     ),
 )
 def list_checks() -> Dict[str, Any]:
