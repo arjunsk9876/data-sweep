@@ -3,9 +3,14 @@ same inputs. Both call the exact same underlying functions (leakage.py,
 temporal.py, keys.py) -- this test asserts that stays true rather than
 re-testing the detection logic itself (that's covered elsewhere).
 """
+import sys
 from dataclasses import asdict
 
 import pandas as pd
+import pytest
+
+if sys.version_info < (3, 10):
+    pytest.skip("mcp package requires Python >= 3.10", allow_module_level=True)
 
 from data_sweep.entity_leakage.findings import from_candidate_keys
 from data_sweep.entity_leakage.keys import score_candidate_keys

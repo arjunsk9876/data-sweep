@@ -1,7 +1,11 @@
+import sys
 from pathlib import Path
 
 import pandas as pd
 import pytest
+
+if sys.version_info < (3, 10):
+    pytest.skip("mcp package requires Python >= 3.10", allow_module_level=True)
 
 from data_sweep.mcp_server import (
     MAX_FILE_SIZE_BYTES,
